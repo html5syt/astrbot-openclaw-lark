@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import html as _html
 from typing import Any
 
 from astrbot.api import FunctionTool
@@ -158,8 +159,8 @@ def _blocks_to_markdown(blocks: list) -> str:
         elif btype == 19:  # Callout (high-light block)
             callout = block.get("callout", {})
             emoji = callout.get("emoji_id", "")
-            prefix = f"{emoji} " if emoji else ""
-            lines.append(f"> **{prefix}Callout**")
+            header = f"> {emoji}" if emoji else "> [callout]"
+            lines.append(header)
             for cid in children_ids:
                 if cid in by_id:
                     child_lines_before = len(lines)
@@ -174,15 +175,15 @@ def _blocks_to_markdown(blocks: list) -> str:
 
         elif btype == 23:  # File
             file_data = block.get("file", {})
-            name = file_data.get("name", "file")
-            token = file_data.get("token", "")
-            lines.append(f"<view type=\"1\"><file token=\"{token}\" name=\"{name}\"/></view>")
+            name = _html.escape(file_data.get("name", "file"))
+            token = _html.escape(file_data.get("token", ""))
+            lines.append(f'<view type="1"><file token="{token}" name="{name}"/></view>')
 
         elif btype == 27:  # Image
             image = block.get("image", {})
-            token = image.get("token", "")
-            width = image.get("width", "")
-            height = image.get("height", "")
+            token = _html.escape(str(image.get("token", "")))
+            width = _html.escape(str(image.get("width", "")))
+            height = _html.escape(str(image.get("height", "")))
             align = image.get("align", 1)
             align_str = {1: "left", 2: "center", 3: "right"}.get(align, "center")
             lines.append(
