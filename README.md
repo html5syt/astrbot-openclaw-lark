@@ -10,11 +10,6 @@
 
 这是将飞书/Lark Open API 集成到 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 的工具插件。它将飞书的日历、任务、多维表格、电子表格、文档、云盘、知识库等功能封装为 LLM 工具（FunctionTool），让 AI 助手可以直接操作你的飞书工作区。
 
-> **关于原始版本**：本插件是 [OpenClaw Lark 插件](https://github.com/html5syt/astrbot-openclaw-lark) TypeScript 版的 Python 改写版本，专门适配 AstrBot 平台。
-> - 消息收发使用 AstrBot 内置的[飞书平台适配器](https://docs.astrbot.app/)，无需重复配置；
-> - 权限管理由 AstrBot 自身处理；
-> - 已移除流式卡片输出、OAuth 用户授权、分群组配置等原插件功能。
-
 ---
 
 ## 功能特性
@@ -34,9 +29,9 @@
 | 📊 多维表格 | `feishu_bitable_app_table_record` | 记录（行）的增删改查及批量操作 |
 | 📊 多维表格 | `feishu_bitable_app_table_field` | 字段（列）管理 |
 | 📊 多维表格 | `feishu_bitable_app_table_view` | 视图管理 |
-| 📄 文档 | `feishu_fetch_doc` | 获取云文档内容（Markdown）|
+| 📄 文档 | `feishu_fetch_doc` | 获取云文档内容 |
 | 📄 文档 | `feishu_create_doc` | 创建云文档 |
-| 📄 文档 | `feishu_update_doc` | 更新云文档内容 |
+| 📄 文档 | `feishu_update_doc` | 追加或替换云文档内容 |
 | 🗂️ 云盘 | `feishu_drive_file` | 文件列表/元数据/复制/移动/删除/创建文件夹 |
 | 🗂️ 云盘 | `feishu_doc_comments` | 文档评论管理 |
 | 🗂️ 云盘 | `feishu_doc_media` | 文档媒体资源下载 |
@@ -71,13 +66,12 @@ git clone https://github.com/html5syt/astrbot-openclaw-lark astrbot_plugin_feish
 
 在 AstrBot 插件管理面板中，找到本插件，填写以下配置：
 
-| 配置项 | 必填 | 说明 |
-|--------|------|------|
-| `app_id` | ✅ | 飞书应用的 App ID |
-| `app_secret` | ✅ | 飞书应用的 App Secret |
-| `domain` | ❌ | 飞书域名，`feishu`（国内）或 `lark`（海外），默认 `feishu` |
-| `mcp_base_url` | ❌ | 飞书 MCP 服务地址（可选，用于更完整的文档操作支持） |
-| `mcp_user_access_token` | ❌ | MCP 服务的用户访问令牌（可选） |
+| 配置项 | 必填 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `app_id` | ✅ | — | 飞书应用的 App ID |
+| `app_secret` | ✅ | — | 飞书应用的 App Secret |
+| `domain` | ❌ | `feishu` | 飞书域名：`feishu`（国内）或 `lark`（海外） |
+| `auth_mode` | ❌ | `tenant` | 认证模式：`tenant`（机器人）或 `user`（用户 OAuth） |
 
 ### 创建飞书应用
 
@@ -88,8 +82,6 @@ git clone https://github.com/html5syt/astrbot-openclaw-lark astrbot_plugin_feish
 5. 将应用发布到工作区
 
 ### 推荐应用权限
-
-根据你需要使用的工具开启对应权限：
 
 <details>
 <summary>📅 日历相关权限</summary>
@@ -153,7 +145,6 @@ git clone https://github.com/html5syt/astrbot-openclaw-lark astrbot_plugin_feish
 <summary>👤 用户/群聊权限</summary>
 
 - `contact:user.base:readonly` - 获取用户基本信息
-- `contact:user.phone:readonly` - 获取用户手机号（可选）
 - `im:chat:readonly` - 查看群聊信息
 
 </details>
@@ -170,34 +161,54 @@ git clone https://github.com/html5syt/astrbot-openclaw-lark astrbot_plugin_feish
 
 ---
 
+## 认证模式
+
+本插件支持两种认证模式，可在插件配置中设置默认值，也可通过命令随时切换：
+
+### 租户（机器人）模式（默认）
+
+AI 工具以机器人身份调用飞书 API，适合大多数自动化场景。
+
+### 用户 OAuth 模式
+
+AI 工具以用户身份调用飞书 API，适合需要访问个人数据的场景（如个人日历、私有文档等）。
+
+使用用户 OAuth 模式需先授权：
+
+```
+/feishu login
+```
+
+授权后，AI 工具将以你的用户身份操作飞书。如果 AI 工具遇到权限不足，会提示发送 `/feishu login` 重新授权。
+
+### 命令一览
+
+| 命令 | 说明 |
+|------|------|
+| `/feishu auth` | 查看当前认证模式和授权状态 |
+| `/feishu auth tenant` | 切换为租户（机器人）模式 |
+| `/feishu auth user` | 切换为用户 OAuth 模式 |
+| `/feishu login` | 发起 OAuth 授权（Device Flow），会发送授权链接 |
+| `/feishu logout` | 撤销当前用户的 OAuth 授权 |
+
+---
+
 ## 文档操作说明
 
-### 基本用法（REST API）
+文档操作通过飞书 Docx v1 REST API 直接实现，无需外部 MCP 服务：
 
-不配置 MCP 服务时，文档操作通过飞书 Docx REST API 实现：
-- `feishu_fetch_doc`：返回纯文本内容
-- `feishu_create_doc`：创建空白文档（可指定标题）
-- `feishu_update_doc`：仅支持 `append`（追加文本）模式
-
-### 高级用法（配置 MCP 服务）
-
-配置 MCP 服务后，文档操作功能更强大：
-- `feishu_fetch_doc`：返回 Lark-flavored Markdown 格式内容
-- `feishu_create_doc`：支持从 Markdown 创建有内容的文档
-- `feishu_update_doc`：支持 7 种更新模式（append/overwrite/replace_range 等）
-
-如需使用 MCP 服务，请参考 [Feishu MCP 项目](https://github.com/larksuite/feishu-mcp)。
+- `feishu_fetch_doc`：返回文档纯文本内容，支持 `offset`/`limit` 分页
+- `feishu_create_doc`：创建文档，可选标题和初始文字内容
+- `feishu_update_doc`：支持 `append`（追加到末尾）和 `replace_all`/`overwrite`（清空后重写）
 
 ---
 
 ## 安全说明
 
-本插件使用飞书**应用访问令牌**（App Access Token）调用 API，即以机器人身份操作。
-
 请注意：
 - **妥善保管** App Secret，不要提交到公开代码仓库
 - 根据最小权限原则，只开启实际需要的 API 权限
-- 定期审查插件的操作日志
+- 用户 OAuth 令牌通过 AstrBot KV 存储加密保存，不会暴露给 AI 层
 
 ---
 

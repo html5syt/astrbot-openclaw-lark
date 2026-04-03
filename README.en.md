@@ -8,12 +8,7 @@
 
 ---
 
-This is a Feishu/Lark Open API integration plugin for [AstrBot](https://github.com/AstrBotDevs/AstrBot). It wraps Feishu's calendar, tasks, multidimensional tables, spreadsheets, documents, cloud drive, wiki, and more as LLM tools (FunctionTool), enabling AI assistants to directly operate your Feishu workspace.
-
-> **About the original version**: This plugin is a Python rewrite of the [OpenClaw Lark Plugin](https://github.com/html5syt/astrbot-openclaw-lark) TypeScript version, specifically adapted for the AstrBot platform.
-> - Messaging uses AstrBot's built-in [Feishu platform adapter](https://docs.astrbot.app/)
-> - Permission management is handled by AstrBot itself
-> - Removed: streaming card output, OAuth user authorization, per-group configuration
+A Feishu/Lark Open API integration plugin for [AstrBot](https://github.com/AstrBotDevs/AstrBot). It wraps Feishu's calendar, tasks, multidimensional tables, spreadsheets, documents, cloud drive, wiki, and more as LLM tools (FunctionTool), enabling AI assistants to directly operate your Feishu workspace.
 
 ---
 
@@ -34,9 +29,9 @@ This is a Feishu/Lark Open API integration plugin for [AstrBot](https://github.c
 | 📊 Bitable | `feishu_bitable_app_table_record` | CRUD records with batch operations |
 | 📊 Bitable | `feishu_bitable_app_table_field` | Manage fields (columns) |
 | 📊 Bitable | `feishu_bitable_app_table_view` | Manage views |
-| 📄 Docs | `feishu_fetch_doc` | Get document content (Markdown) |
+| 📄 Docs | `feishu_fetch_doc` | Get document content |
 | 📄 Docs | `feishu_create_doc` | Create documents |
-| 📄 Docs | `feishu_update_doc` | Update document content |
+| 📄 Docs | `feishu_update_doc` | Append or replace document content |
 | 🗂️ Drive | `feishu_drive_file` | List/meta/copy/move/delete/create folder |
 | 🗂️ Drive | `feishu_doc_comments` | Manage document comments |
 | 🗂️ Drive | `feishu_doc_media` | Download document media resources |
@@ -71,13 +66,12 @@ git clone https://github.com/html5syt/astrbot-openclaw-lark astrbot_plugin_feish
 
 In the AstrBot plugin management panel, find this plugin and fill in the following settings:
 
-| Setting | Required | Description |
-|---------|----------|-------------|
-| `app_id` | ✅ | Feishu App ID |
-| `app_secret` | ✅ | Feishu App Secret |
-| `domain` | ❌ | Domain: `feishu` (China) or `lark` (International), default `feishu` |
-| `mcp_base_url` | ❌ | Feishu MCP server URL (optional, for richer document operations) |
-| `mcp_user_access_token` | ❌ | User access token for MCP server (optional) |
+| Setting | Required | Default | Description |
+|---------|----------|---------|-------------|
+| `app_id` | ✅ | — | Feishu App ID |
+| `app_secret` | ✅ | — | Feishu App Secret |
+| `domain` | ❌ | `feishu` | Domain: `feishu` (China) or `lark` (International) |
+| `auth_mode` | ❌ | `tenant` | Auth mode: `tenant` (bot identity) or `user` (user OAuth) |
 
 ### Creating a Feishu App
 
@@ -94,6 +88,7 @@ In the AstrBot plugin management panel, find this plugin and fill in the followi
 
 - `calendar:calendar:readonly` - Read calendars
 - `calendar:calendar` - Manage calendars
+- `calendar:acl` - Manage calendar permissions
 
 </details>
 
@@ -139,6 +134,21 @@ In the AstrBot plugin management panel, find this plugin and fill in the followi
 
 </details>
 
+<details>
+<summary>🔍 Search Permissions</summary>
+
+- `docs:doc:search` - Search documents
+
+</details>
+
+<details>
+<summary>👤 User/Chat Permissions</summary>
+
+- `contact:user.base:readonly` - Read basic user info
+- `im:chat:readonly` - Read chat information
+
+</details>
+
 ### Connecting Feishu Messages (Platform Adapter)
 
 This plugin **does not handle** message sending/receiving. For Feishu messaging, use AstrBot's built-in Feishu platform adapter:
@@ -151,34 +161,53 @@ See [AstrBot Feishu Platform Adapter Documentation](https://docs.astrbot.app/) f
 
 ---
 
-## Document Operation Notes
+## Authentication Modes
 
-### Basic Usage (REST API)
+The plugin supports two authentication modes. Set the default in plugin config, or switch at any time with commands:
 
-Without MCP service configured, document operations use the Feishu Docx REST API:
-- `feishu_fetch_doc`: Returns plain text content
-- `feishu_create_doc`: Creates empty document (with optional title)
-- `feishu_update_doc`: Only supports `append` mode (append text)
+### Tenant (Bot) Mode — Default
 
-### Advanced Usage (With MCP Service)
+AI tools call the Feishu API as the bot. Suitable for most automation scenarios.
 
-With MCP service configured, document operations are much more powerful:
-- `feishu_fetch_doc`: Returns Lark-flavored Markdown content
-- `feishu_create_doc`: Supports creating documents from Markdown
-- `feishu_update_doc`: Supports 7 update modes (append/overwrite/replace_range, etc.)
+### User OAuth Mode
 
-See [Feishu MCP Project](https://github.com/larksuite/feishu-mcp) for MCP setup.
+AI tools call the Feishu API as a specific user. Suitable for accessing personal data (e.g., personal calendar, private documents).
+
+To use user OAuth mode, authorize first:
+
+```
+/feishu login
+```
+
+After authorization, AI tools will operate Feishu as your user identity. If a tool encounters a permission error, it will prompt you to run `/feishu login` to re-authorize.
+
+### Command Reference
+
+| Command | Description |
+|---------|-------------|
+| `/feishu auth` | Show current auth mode and token status |
+| `/feishu auth tenant` | Switch to tenant (bot) mode |
+| `/feishu auth user` | Switch to user OAuth mode |
+| `/feishu login` | Start OAuth authorization (Device Flow) — sends an auth link |
+| `/feishu logout` | Revoke the current user's OAuth authorization |
+
+---
+
+## Document Operations
+
+Document operations are implemented directly via the Feishu Docx v1 REST API — no external MCP server required:
+
+- `feishu_fetch_doc`: Returns plain text content with optional `offset`/`limit` pagination
+- `feishu_create_doc`: Creates a document with optional title and initial text content
+- `feishu_update_doc`: Supports `append` (add to end) and `replace_all`/`overwrite` (clear and rewrite)
 
 ---
 
 ## Security Notes
 
-This plugin uses Feishu **App Access Token** (bot identity) for API calls.
-
-Please note:
-- **Keep App Secret secure** and never commit it to public repositories
+- **Keep App Secret secure** — never commit it to public repositories
 - Only enable the permissions you actually need (principle of least privilege)
-- Regularly review plugin operation logs
+- User OAuth tokens are stored encrypted in AstrBot's KV store and are never exposed to the AI layer
 
 ---
 
@@ -195,7 +224,7 @@ Issues and Pull Requests are welcome.
 MIT License © 2026 html5syt
 
 This software calls Feishu/Lark Open Platform APIs at runtime. Usage of these APIs requires compliance with:
-- [Feishu Privacy Policy](https://www.feishu.cn/privacy)
 - [Feishu Terms of Service](https://www.feishu.cn/terms)
-- [Lark Privacy Policy](https://www.larksuite.com/privacy-policy)
+- [Feishu Privacy Policy](https://www.feishu.cn/privacy)
 - [Lark Terms of Service](https://www.larksuite.com/user-terms-of-service)
+- [Lark Privacy Policy](https://www.larksuite.com/privacy-policy)

@@ -18,8 +18,8 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api.star import Context, Star
 
-from openclaw_lark import LarkAPIClient, set_lark_client, get_lark_client
-from openclaw_lark.tools import (
+from .openclaw_lark import LarkAPIClient, set_lark_client, get_lark_client
+from .openclaw_lark.tools import (
     CalendarCalendarTool,
     CalendarEventTool,
     CalendarEventAttendeeTool,
