@@ -18,8 +18,8 @@ def _make_text_block(text: str) -> dict:
     """Build a paragraph block structure for the Feishu docx blocks API."""
     return {
         "block_type": 2,
-        "paragraph": {
-            "elements": [{"type": 0, "text_run": {"content": text}}]
+        "text": {
+            "elements": [{"text_run": {"content": text}}]
         },
     }
 
@@ -107,11 +107,11 @@ def _blocks_to_markdown(blocks: list) -> str:
                     render(by_id[cid], depth)
             return
 
-        if btype == 2:  # Paragraph
-            elems = block.get("paragraph", {}).get("elements", [])
+        if btype == 2:  # Text / Paragraph (key is "text", not "paragraph")
+            elems = block.get("text", {}).get("elements", [])
             lines.append(indent + _render_inline(elems))
 
-        elif btype in _HEADING_TYPES:  # Headings
+        elif btype in _HEADING_TYPES:  # Headings (heading1–heading9)
             level = _HEADING_TYPES[btype]
             field = f"heading{level}"
             elems = block.get(field, {}).get("elements", [])
@@ -155,17 +155,41 @@ def _blocks_to_markdown(blocks: list) -> str:
             checkbox = "x" if done else " "
             lines.append(indent + f"- [{checkbox}] {_render_inline(elems)}")
 
-        elif btype == 18:  # Divider
+        elif btype == 19:  # Callout (high-light block)
+            callout = block.get("callout", {})
+            emoji = callout.get("emoji_id", "")
+            prefix = f"{emoji} " if emoji else ""
+            lines.append(f"> **{prefix}Callout**")
+            for cid in children_ids:
+                if cid in by_id:
+                    child_lines_before = len(lines)
+                    render(by_id[cid], depth)
+                    # Prefix newly added lines with ">"
+                    for i in range(child_lines_before, len(lines)):
+                        lines[i] = f"> {lines[i]}"
+            return
+
+        elif btype == 22:  # Divider
             lines.append("---")
 
-        elif btype == 19:  # Image
+        elif btype == 23:  # File
+            file_data = block.get("file", {})
+            name = file_data.get("name", "file")
+            token = file_data.get("token", "")
+            lines.append(f"<view type=\"1\"><file token=\"{token}\" name=\"{name}\"/></view>")
+
+        elif btype == 27:  # Image
             image = block.get("image", {})
             token = image.get("token", "")
-            caption_elems = image.get("caption", {}).get("elements", [])
-            alt = _render_inline(caption_elems) if caption_elems else "image"
-            lines.append(f"![{alt}](feishu://image/{token})")
+            width = image.get("width", "")
+            height = image.get("height", "")
+            align = image.get("align", 1)
+            align_str = {1: "left", 2: "center", 3: "right"}.get(align, "center")
+            lines.append(
+                f'<image token="{token}" width="{width}" height="{height}" align="{align_str}"/>'
+            )
 
-        elif btype == 22:  # Table — emit placeholder
+        elif btype == 32:  # Table — emit placeholder
             lines.append("[表格]")
 
         elif btype == 999:  # Child page reference
