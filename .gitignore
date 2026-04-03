@@ -1,12 +1,22 @@
-node_modules/
-.DS_Store
-
-# feishu plugin build artifacts
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
 dist/
-release/
-src/tools/docs/
+build/
+.venv/
+venv/
+env/
+*.egg
 
-*.log
+# Node.js (legacy, not used in Python version)
+node_modules/
+
+# macOS
+.DS_Store
+/**/.DS_Store
 
 # IDE / AI config
 .idea/
@@ -15,12 +25,12 @@ src/tools/docs/
 .cursor/
 .windsurf/
 
+# Logs
+*.log
 
 # Internal documentation directories
 /doc/
 /docs/
 
-/**/package-lock.json
-/**/.DS_Store
-
-.eslintcache
+# Build artifacts
+release/
