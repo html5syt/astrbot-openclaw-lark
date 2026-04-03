@@ -34,3 +34,6 @@ node_modules/
 
 # Build artifacts
 release/
+
+# AstrBot runtime data (created during development/testing)
+/data/

@@ -16,16 +16,11 @@
     "options": ["feishu", "lark"],
     "hint": "国内版选 feishu，海外版选 lark"
   },
-  "mcp_base_url": {
-    "description": "飞书 MCP 服务地址（可选）",
+  "auth_mode": {
+    "description": "认证模式",
     "type": "string",
-    "default": "",
-    "hint": "如需使用飞书文档 MCP 工具（create/fetch/update doc），请填写 MCP 服务地址，例如 http://localhost:3000。留空则使用内置 REST API 实现。"
-  },
-  "mcp_user_access_token": {
-    "description": "飞书用户访问令牌（可选，用于 MCP 服务）",
-    "type": "string",
-    "default": "",
-    "hint": "如使用 MCP 服务进行文档操作，需要提供用户访问令牌（以用户身份执行操作）。"
+    "default": "tenant",
+    "options": ["tenant", "user"],
+    "hint": "tenant：以机器人（租户）身份调用 API（默认）；user：以用户 OAuth 身份调用 API，需通过 /feishu login 完成授权。可用 /feishu auth [tenant|user] 命令随时切换。"
   }
 }

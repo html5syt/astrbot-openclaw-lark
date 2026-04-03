@@ -216,7 +216,7 @@ async def _update_doc(event: Any, **kw: Any) -> str:
             if child_count > 0:
                 await client.delete(
                     f"/open-apis/docx/v1/documents/{doc_id}/blocks/{doc_id}/children",
-                    params={"start_index": 0, "end_index": child_count},
+                    data={"start_index": 0, "end_index": child_count},
                 )
 
             # Step 3: Insert new content blocks
