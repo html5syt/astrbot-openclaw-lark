@@ -29,7 +29,7 @@ A Feishu/Lark Open API integration plugin for [AstrBot](https://github.com/AstrB
 | 📊 Bitable | `feishu_bitable_app_table_record` | CRUD records with batch operations |
 | 📊 Bitable | `feishu_bitable_app_table_field` | Manage fields (columns) |
 | 📊 Bitable | `feishu_bitable_app_table_view` | Manage views |
-| 📄 Docs | `feishu_fetch_doc` | Get document content |
+| 📄 Docs | `feishu_fetch_doc` | Get document content (Markdown format) |
 | 📄 Docs | `feishu_create_doc` | Create documents |
 | 📄 Docs | `feishu_update_doc` | Append or replace document content |
 | 🗂️ Drive | `feishu_drive_file` | List/meta/copy/move/delete/create folder |
@@ -197,7 +197,7 @@ After authorization, AI tools will operate Feishu as your user identity. If a to
 
 Document operations are implemented directly via the Feishu Docx v1 REST API — no external MCP server required:
 
-- `feishu_fetch_doc`: Returns plain text content with optional `offset`/`limit` pagination
+- `feishu_fetch_doc`: Returns content in **Markdown format** (preserving headings, lists, code blocks, quotes, todos, etc.) with optional `offset`/`limit` pagination
 - `feishu_create_doc`: Creates a document with optional title and initial text content
 - `feishu_update_doc`: Supports `append` (add to end) and `replace_all`/`overwrite` (clear and rewrite)
 

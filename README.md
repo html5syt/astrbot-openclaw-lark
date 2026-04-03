@@ -29,7 +29,7 @@
 | 📊 多维表格 | `feishu_bitable_app_table_record` | 记录（行）的增删改查及批量操作 |
 | 📊 多维表格 | `feishu_bitable_app_table_field` | 字段（列）管理 |
 | 📊 多维表格 | `feishu_bitable_app_table_view` | 视图管理 |
-| 📄 文档 | `feishu_fetch_doc` | 获取云文档内容 |
+| 📄 文档 | `feishu_fetch_doc` | 获取云文档内容（Markdown 格式） |
 | 📄 文档 | `feishu_create_doc` | 创建云文档 |
 | 📄 文档 | `feishu_update_doc` | 追加或替换云文档内容 |
 | 🗂️ 云盘 | `feishu_drive_file` | 文件列表/元数据/复制/移动/删除/创建文件夹 |
@@ -197,7 +197,7 @@ AI 工具以用户身份调用飞书 API，适合需要访问个人数据的场�
 
 文档操作通过飞书 Docx v1 REST API 直接实现，无需外部 MCP 服务：
 
-- `feishu_fetch_doc`：返回文档纯文本内容，支持 `offset`/`limit` 分页
+- `feishu_fetch_doc`：返回 **Markdown 格式**内容（保留标题、列表、代码块、引用、待办等结构），支持 `offset`/`limit` 分页
 - `feishu_create_doc`：创建文档，可选标题和初始文字内容
 - `feishu_update_doc`：支持 `append`（追加到末尾）和 `replace_all`/`overwrite`（清空后重写）
 
