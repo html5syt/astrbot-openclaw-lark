@@ -1,8 +1,8 @@
 name: astrbot_plugin_feishu_tools
-display_name: 飞书工具插件（Feishu Tools）
+display_name: 飞书 AstrBot 能力增强 
 desc: 为 AstrBot 提供飞书/Lark 全套工具能力，包括文档、多维表格、电子表格、日历、任务、云盘、知识库等。支持租户/用户 OAuth 双模式认证。
 version: v1.1.0
-author: html5syt
+author: Mr. Tim
 repo: https://github.com/html5syt/astrbot-openclaw-lark
 support_platforms:
   - lark

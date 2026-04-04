@@ -4,8 +4,6 @@
 [![Python Version](https://img.shields.io/badge/python-%3E%3D3.10-blue.svg)](https://www.python.org/)
 [![AstrBot Version](https://img.shields.io/badge/astrbot-%3E%3D4.5.0-green.svg)](https://github.com/AstrBotDevs/AstrBot)
 
-[English](./README.en.md) | **中文**
-
 ---
 
 这是将飞书/Lark Open API 集成到 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 的工具插件。它将飞书的日历、任务、多维表格、电子表格、文档、云盘、知识库等功能封装为 LLM 工具（FunctionTool），让 AI 助手可以直接操作你的飞书工作区。
@@ -149,6 +147,114 @@ git clone https://github.com/html5syt/astrbot-openclaw-lark astrbot_plugin_feish
 
 </details>
 
+你也可以复制以下内容批量导入权限：
+
+```json
+{
+  "scopes": {
+    "tenant": [
+      "contact:contact.base:readonly",
+      "docx:document:readonly",
+      "im:chat:read",
+      "im:chat:update",
+      "im:message.group_at_msg:readonly",
+      "im:message.p2p_msg:readonly",
+      "im:message.pins:read",
+      "im:message.pins:write_only",
+      "im:message.reactions:read",
+      "im:message.reactions:write_only",
+      "im:message:readonly",
+      "im:message:recall",
+      "im:message:send_as_bot",
+      "im:message:send_multi_users",
+      "im:message:send_sys_msg",
+      "im:message:update",
+      "im:resource",
+      "application:application:self_manage",
+      "cardkit:card:write",
+      "cardkit:card:read"
+    ],
+    "user": [
+      "contact:user.employee_id:readonly",
+      "offline_access","base:app:copy",
+      "base:field:create",
+      "base:field:delete",
+      "base:field:read",
+      "base:field:update",
+      "base:record:create",
+      "base:record:delete",
+      "base:record:retrieve",
+      "base:record:update",
+      "base:table:create",
+      "base:table:delete",
+      "base:table:read",
+      "base:table:update",
+      "base:view:read",
+      "base:view:write_only",
+      "base:app:create",
+      "base:app:update",
+      "base:app:read",
+      "sheets:spreadsheet.meta:read",
+      "sheets:spreadsheet:read",
+      "sheets:spreadsheet:create",
+      "sheets:spreadsheet:write_only",
+      "docs:document:export",
+      "docs:document.media:upload",
+      "board:whiteboard:node:create",
+      "board:whiteboard:node:read",
+      "calendar:calendar:read",
+      "calendar:calendar.event:create",
+      "calendar:calendar.event:delete",
+      "calendar:calendar.event:read",
+      "calendar:calendar.event:reply",
+      "calendar:calendar.event:update",
+      "calendar:calendar.free_busy:read",
+      "contact:contact.base:readonly",
+      "contact:user.base:readonly",
+      "contact:user:search",
+      "docs:document.comment:create",
+      "docs:document.comment:read",
+      "docs:document.comment:update",
+      "docs:document.media:download",
+      "docs:document:copy",
+      "docx:document:create",
+      "docx:document:readonly",
+      "docx:document:write_only",
+      "drive:drive.metadata:readonly",
+      "drive:file:download",
+      "drive:file:upload",
+      "im:chat.members:read",
+      "im:chat:read",
+      "im:message",
+      "im:message.group_msg:get_as_user",
+      "im:message.p2p_msg:get_as_user",
+      "im:message:readonly",
+      "search:docs:read",
+      "search:message",
+      "space:document:delete",
+      "space:document:move",
+      "space:document:retrieve",
+      "task:comment:read",
+      "task:comment:write",
+      "task:task:read",
+      "task:task:write",
+      "task:task:writeonly",
+      "task:tasklist:read",
+      "task:tasklist:write",
+      "wiki:node:copy",
+      "wiki:node:create",
+      "wiki:node:move",
+      "wiki:node:read",
+      "wiki:node:retrieve",
+      "wiki:space:read",
+      "wiki:space:retrieve",
+      "wiki:space:write_only",
+      "contact:user.basic_profile:readonly"
+    ]
+  }
+}
+```
+
 ### 连接飞书消息（平台适配器）
 
 本插件**不处理**消息的收发。接收/发送飞书消息请使用 AstrBot 内置的飞书平台适配器：
@@ -157,7 +263,7 @@ git clone https://github.com/html5syt/astrbot-openclaw-lark astrbot_plugin_feish
 2. 添加飞书平台，填写 App ID、App Secret、Verification Token 等
 3. 在飞书开放平台配置机器人事件订阅地址
 
-详情请参考 [AstrBot 飞书平台适配器文档](https://docs.astrbot.app/)。
+详情请参考 [AstrBot 飞书平台适配器文档](https://docs.astrbot.app/platform/lark.html)。
 
 ---
 
@@ -167,9 +273,11 @@ git clone https://github.com/html5syt/astrbot-openclaw-lark astrbot_plugin_feish
 
 ### 租户（机器人）模式（默认）
 
-AI 工具以机器人身份调用飞书 API，适合大多数自动化场景。
+AI 工具以机器人身份调用飞书 API，适合大多数自动化场景。机器人相当于一个单独的用户，拥有独立的权限和数据访问范围。如果需要访问个人数据（如个人日历、私有文档等），请将其分享给机器人/为机器人添加访问权限。
 
 ### 用户 OAuth 模式
+
+**警告：**请使用租户模式，用户模式缺失OAuth回调实现，无法正常授权。
 
 AI 工具以用户身份调用飞书 API，适合需要访问个人数据的场景（如个人日历、私有文档等）。
 
@@ -190,16 +298,6 @@ AI 工具以用户身份调用飞书 API，适合需要访问个人数据的场�
 | `/feishu auth user` | 切换为用户 OAuth 模式 |
 | `/feishu login` | 发起 OAuth 授权（Device Flow），会发送授权链接 |
 | `/feishu logout` | 撤销当前用户的 OAuth 授权 |
-
----
-
-## 文档操作说明
-
-文档操作通过飞书 Docx v1 REST API 直接实现，无需外部 MCP 服务：
-
-- `feishu_fetch_doc`：返回 **Markdown 格式**内容（保留标题、列表、代码块、引用、待办等结构），支持 `offset`/`limit` 分页
-- `feishu_create_doc`：创建文档，可选标题和初始文字内容
-- `feishu_update_doc`：支持 `append`（追加到末尾）和 `replace_all`/`overwrite`（清空后重写）
 
 ---
 
