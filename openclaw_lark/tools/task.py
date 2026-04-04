@@ -518,3 +518,191 @@ TaskSubtaskTool: FunctionTool = make_tool(
     },
     handler=_task_subtask,
 )
+
+
+# ---------------------------------------------------------------------------
+# feishu_task_section
+# ---------------------------------------------------------------------------
+
+
+async def _task_section(event: Any, **kw: Any) -> str:
+    client = get_lark_client()
+    action = kw.get("action")
+    uid_type = kw.get("user_id_type", "open_id")
+
+    try:
+        if action == "create":
+            if not kw.get("name"):
+                return ok({"error": "name is required for 'create' action"})
+            if not kw.get("resource_type"):
+                return ok({"error": "resource_type is required for 'create' action"})
+
+            section_data: dict = {
+                "name": kw["name"],
+                "resource_type": kw["resource_type"],
+            }
+            if kw.get("resource_id"):
+                section_data["resource_id"] = kw["resource_id"]
+            if kw.get("insert_before"):
+                section_data["insert_before"] = kw["insert_before"]
+            if kw.get("insert_after"):
+                section_data["insert_after"] = kw["insert_after"]
+
+            res = await client.post(
+                "/open-apis/task/v2/sections",
+                section_data,
+                params={"user_id_type": uid_type},
+            )
+            client.check(res, "task_section.create")
+            return ok(res.get("data", {}))
+
+        elif action == "get":
+            section_guid = kw.get("section_guid", "")
+            if not section_guid:
+                return ok({"error": "section_guid is required for 'get' action"})
+            res = await client.get(
+                f"/open-apis/task/v2/sections/{section_guid}",
+                params={"user_id_type": uid_type},
+            )
+            client.check(res, "task_section.get")
+            return ok(res.get("data", {}))
+
+        elif action == "patch":
+            section_guid = kw.get("section_guid", "")
+            if not section_guid:
+                return ok({"error": "section_guid is required for 'patch' action"})
+
+            update_data: dict = {}
+            update_fields: list[str] = []
+            for field in ("name", "insert_before", "insert_after"):
+                if kw.get(field) is not None:
+                    update_data[field] = kw[field]
+                    update_fields.append(field)
+
+            if not update_fields:
+                return ok({"error": "No fields to update"})
+
+            res = await client.patch(
+                f"/open-apis/task/v2/sections/{section_guid}",
+                {"section": update_data, "update_fields": update_fields},
+                params={"user_id_type": uid_type},
+            )
+            client.check(res, "task_section.patch")
+            return ok(res.get("data", {}))
+
+        elif action == "list":
+            if not kw.get("resource_type"):
+                return ok({"error": "resource_type is required for 'list' action"})
+            params: dict = {
+                "resource_type": kw["resource_type"],
+                "user_id_type": uid_type,
+            }
+            if kw.get("resource_id"):
+                params["resource_id"] = kw["resource_id"]
+            if kw.get("page_size"):
+                params["page_size"] = kw["page_size"]
+            if kw.get("page_token"):
+                params["page_token"] = kw["page_token"]
+            res = await client.get("/open-apis/task/v2/sections", params=params)
+            client.check(res, "task_section.list")
+            return ok(res.get("data", {}))
+
+        elif action == "tasks":
+            section_guid = kw.get("section_guid", "")
+            if not section_guid:
+                return ok({"error": "section_guid is required for 'tasks' action"})
+            params = {"user_id_type": uid_type}
+            if kw.get("page_size"):
+                params["page_size"] = kw["page_size"]
+            if kw.get("page_token"):
+                params["page_token"] = kw["page_token"]
+            if kw.get("completed") is not None:
+                params["completed"] = kw["completed"]
+            if kw.get("created_from"):
+                ts = _parse_time_to_ms(kw["created_from"])
+                params["created_from"] = ts if ts else kw["created_from"]
+            if kw.get("created_to"):
+                ts = _parse_time_to_ms(kw["created_to"])
+                params["created_to"] = ts if ts else kw["created_to"]
+            res = await client.get(
+                f"/open-apis/task/v2/sections/{section_guid}/tasks", params=params
+            )
+            client.check(res, "task_section.tasks")
+            return ok(res.get("data", {}))
+
+        else:
+            return ok({"error": f"Unknown action: {action}"})
+
+    except Exception as e:
+        return ok({"error": str(e)})
+
+
+TaskSectionTool: FunctionTool = make_tool(
+    name="feishu_task_section",
+    description=(
+        "飞书任务自定义分组（Section）管理工具。"
+        "Actions: create（创建分组）, get（获取分组详情）, patch（更新分组）, "
+        "list（列出分组）, tasks（查询分组内任务）。"
+        "resource_type 可选值：'tasklist'（任务清单）或 'my_tasks'（我的任务）。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["create", "get", "patch", "list", "tasks"],
+                "description": "操作类型",
+            },
+            "section_guid": {
+                "type": "string",
+                "description": "分组 GUID（action=get/patch/tasks 时必填）",
+            },
+            "name": {
+                "type": "string",
+                "description": "分组名称（action=create 时必填；patch 时可选）。最大 100 个 UTF-8 字符。",
+            },
+            "resource_type": {
+                "type": "string",
+                "enum": ["tasklist", "my_tasks"],
+                "description": "分组归属资源类型（action=create/list 时必填）",
+            },
+            "resource_id": {
+                "type": "string",
+                "description": (
+                    "资源 ID（action=create/list 时可选）。"
+                    "当 resource_type 为 'tasklist' 时填写清单 GUID；"
+                    "'my_tasks' 时无需填写。"
+                ),
+            },
+            "insert_before": {
+                "type": "string",
+                "description": "将分组插入到该 section_guid 前面（可选）",
+            },
+            "insert_after": {
+                "type": "string",
+                "description": "将分组插入到该 section_guid 后面（可选）",
+            },
+            "completed": {
+                "type": "boolean",
+                "description": "按任务完成状态过滤（action=tasks 时可选，不填则不过滤）",
+            },
+            "created_from": {
+                "type": "string",
+                "description": "按创建时间筛选的起始时间（action=tasks，ISO 8601 或毫秒时间戳）",
+            },
+            "created_to": {
+                "type": "string",
+                "description": "按创建时间筛选的结束时间（action=tasks，ISO 8601 或毫秒时间戳）",
+            },
+            "page_size": {"type": "number", "description": "每页数量"},
+            "page_token": {"type": "string", "description": "分页标记"},
+            "user_id_type": {
+                "type": "string",
+                "enum": ["open_id", "union_id", "user_id"],
+                "description": "用户 ID 类型（默认 open_id）",
+            },
+        },
+        "required": ["action"],
+    },
+    handler=_task_section,
+)
