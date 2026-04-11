@@ -47,6 +47,7 @@ from .openclaw_lark.tools import (
     GetUserTool,
     SearchUserTool,
     ChatTool,
+    MessageTool,
 )
 
 _ALL_TOOLS = (
@@ -82,10 +83,11 @@ _ALL_TOOLS = (
     SheetTool,
     # 搜索
     SearchDocWikiTool,
-    # 用户/群聊
+    # 用户/群聊/消息
     GetUserTool,
     SearchUserTool,
     ChatTool,
+    MessageTool,
 )
 
 

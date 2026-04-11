@@ -12,6 +12,7 @@ from .wiki import WikiSpaceTool, WikiSpaceNodeTool
 from .sheets import SheetTool
 from .search import SearchDocWikiTool
 from .user_chat import GetUserTool, SearchUserTool, ChatTool
+from .im_message import MessageTool
 
 __all__ = [
     "CalendarCalendarTool",
@@ -41,4 +42,5 @@ __all__ = [
     "GetUserTool",
     "SearchUserTool",
     "ChatTool",
+    "MessageTool",
 ]

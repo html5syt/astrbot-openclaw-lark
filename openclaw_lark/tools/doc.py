@@ -102,21 +102,27 @@ def _blocks_to_markdown(blocks: list) -> str:
         children_ids: list[str] = block.get("children", [])
         indent = "  " * depth
 
+        # Add a blank line before any top-level block that is NOT a list item, if needed
+        if depth == 0 and btype not in (1, 12, 13, 17) and lines and lines[-1] != "":
+            lines.append("")
+
         if btype == 1:  # Page — render children only
             for cid in children_ids:
                 if cid in by_id:
                     render(by_id[cid], depth)
             return
 
-        if btype == 2:  # Text / Paragraph (key is "text", not "paragraph")
+        elif btype == 2:  # Text / Paragraph (key is "text", not "paragraph")
             elems = block.get("text", {}).get("elements", [])
             lines.append(indent + _render_inline(elems))
+            lines.append("")
 
         elif btype in _HEADING_TYPES:  # Headings (heading1–heading9)
             level = _HEADING_TYPES[btype]
             field = f"heading{level}"
             elems = block.get(field, {}).get("elements", [])
             lines.append(f"{'#' * level} {_render_inline(elems)}")
+            lines.append("")
 
         elif btype == 12:  # Bullet list
             elems = block.get("bullet", {}).get("elements", [])
@@ -143,11 +149,13 @@ def _blocks_to_markdown(blocks: list) -> str:
             lines.append(f"```{lang}")
             lines.append(code_text)
             lines.append("```")
+            lines.append("")
 
         elif btype == 15:  # Quote
             elems = block.get("quote", {}).get("elements", [])
             for line in _render_inline(elems).splitlines() or [""]:
                 lines.append(f"> {line}")
+            lines.append("")
 
         elif btype == 17:  # Todo
             todo = block.get("todo", {})
@@ -167,17 +175,21 @@ def _blocks_to_markdown(blocks: list) -> str:
                     render(by_id[cid], depth)
                     # Prefix newly added lines with ">"
                     for i in range(child_lines_before, len(lines)):
-                        lines[i] = f"> {lines[i]}"
+                        if lines[i] != "":
+                            lines[i] = f"> {lines[i]}"
+            lines.append("")
             return
 
         elif btype == 22:  # Divider
             lines.append("---")
+            lines.append("")
 
         elif btype == 23:  # File
             file_data = block.get("file", {})
             name = _html.escape(file_data.get("name", "file"))
             token = _html.escape(file_data.get("token", ""))
             lines.append(f'<view type="1"><file token="{token}" name="{name}"/></view>')
+            lines.append("")
 
         elif btype == 27:  # Image
             image = block.get("image", {})
@@ -189,23 +201,34 @@ def _blocks_to_markdown(blocks: list) -> str:
             lines.append(
                 f'<image token="{token}" width="{width}" height="{height}" align="{align_str}"/>'
             )
+            lines.append("")
 
         elif btype == 32:  # Table — emit placeholder
             lines.append("[表格]")
+            lines.append("")
 
         elif btype == 999:  # Child page reference
             elems = block.get("page", {}).get("elements", [])
             text = _render_inline(elems) if elems else "子页面"
             lines.append(f"[📄 {text}]")
+            lines.append("")
 
-        # Render nested children (not already handled by early-return blocks)
+        else:
+            # Fallback for unhandled block types that might have children
+            for cid in children_ids:
+                if cid in by_id:
+                    render(by_id[cid], depth)
+            return
+
+        # Render nested children (standard case for blocks that don't early return)
         for cid in children_ids:
             if cid in by_id:
                 render(by_id[cid], depth)
 
     render(root)
-    return "\n".join(lines)
+    import re
 
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 async def _fetch_all_blocks(client: Any, doc_id: str) -> list:
     """Fetch all blocks for a document, handling pagination."""
