@@ -120,6 +120,8 @@ class FeishuToolsPlugin(Star):
         domain: str = cfg.get("domain", "feishu")
         auth_mode: str = cfg.get("auth_mode", "tenant")
         oauth_callback_port: int = int(cfg.get("oauth_callback_port", 0) or 0)
+        oauth_callback_host: str = cfg.get("oauth_callback_host", "localhost") or "localhost"
+        oauth_callback_bind: str = cfg.get("oauth_callback_bind", "0.0.0.0") or "0.0.0.0"
 
         if not app_id or not app_secret:
             logger.warning(
@@ -133,6 +135,8 @@ class FeishuToolsPlugin(Star):
             domain=domain,
             auth_mode=auth_mode,
             oauth_callback_port=oauth_callback_port,
+            oauth_callback_host=oauth_callback_host,
+            oauth_callback_bind=oauth_callback_bind,
         )
 
         # Wire token persistence to AstrBot KV store
@@ -158,7 +162,8 @@ class FeishuToolsPlugin(Star):
         if ok:
             logger.info(
                 f"[feishu_tools] OAuth 回调服务器已启动，"
-                f"监听 0.0.0.0:{client.oauth_callback_port}"
+                f"监听 {client.oauth_callback_bind}:{client.oauth_callback_port}，"
+                f"回调地址 {client._callback_redirect_uri()}"
             )
         else:
             logger.warning(

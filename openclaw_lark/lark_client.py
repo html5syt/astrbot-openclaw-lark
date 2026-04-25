@@ -130,7 +130,8 @@ class LarkAPIClient:
     User auth supports two flows:
     - Device flow (RFC 8628): user visits a verification URL on any device.
     - Web flow (Authorization Code): user visits an auth URL, Feishu redirects
-      to a local HTTP callback server (bound on 0.0.0.0) to complete the flow.
+      to a local HTTP callback server whose bind address and external hostname
+      are configurable (oauth_callback_bind / oauth_callback_host).
       Requires oauth_callback_port to be set.
 
     Token persistence callbacks (persist_token / load_token) should be wired
@@ -396,7 +397,11 @@ class LarkAPIClient:
         return auth_url, state
 
     def _callback_redirect_uri(self) -> str:
-        return f"http://localhost:{self.oauth_callback_port}/feishu/oauth/callback"
+        host = self.oauth_callback_host
+        # Wrap bare IPv6 addresses in brackets for a valid URI
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        return f"http://{host}:{self.oauth_callback_port}/feishu/oauth/callback"
 
     async def exchange_auth_code(self, code: str) -> Optional[dict]:
         """Exchange an authorization code for tokens.
@@ -433,7 +438,8 @@ class LarkAPIClient:
         Bind address supports both IPv4 (e.g. ``0.0.0.0``) and IPv6
         (e.g. ``::``).  On most Linux/macOS systems binding to ``::`` also
         accepts IPv4-mapped connections (dual-stack) unless the kernel has
-        ``IPV6_V6ONLY`` forced to 1.
+        ``IPV6_V6ONLY`` forced to 1.  You may also bind to a specific address
+        such as ``192.168.1.10`` or ``fe80::1``.
 
         Returns True if the server was started (or was already running),
         False on failure or when no port is configured.

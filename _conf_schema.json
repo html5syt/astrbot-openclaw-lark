@@ -27,6 +27,18 @@
     "description": "用户 OAuth 回调端口（仅用户模式需要）",
     "type": "number",
     "default": 0,
-    "hint": "当认证模式为 user 时，插件会在该端口启动一个本地 HTTP 回调服务器（监听所有网络接口 0.0.0.0），用于接收飞书 OAuth 授权后的回调。需要保证宿主机该端口可被外网/飞书访问，并在飞书应用中将 http://<宿主机IP>:<端口>/feishu/oauth/callback 添加为合法回调地址。设为 0 时禁用 Web 流，改用设备流（Device Flow）授权。"
+    "hint": "当认证模式为 user 时，插件会在该端口启动一个本地 HTTP 回调服务器，用于接收飞书 OAuth 授权后的回调。需要保证宿主机该端口可被外网/飞书访问，并在飞书应用中将回调地址添加为合法重定向 URL。设为 0 时禁用 Web 流，改用设备流（Device Flow）授权。"
+  },
+  "oauth_callback_host": {
+    "description": "用户 OAuth 回调对外主机名或 IP（仅用户模式 Web 流需要）",
+    "type": "string",
+    "default": "localhost",
+    "hint": "飞书将 OAuth 授权结果重定向到的外部地址，用于拼接回调 URL（http://<此值>:<端口>/feishu/oauth/callback）。填写宿主机的公网 IP、域名或内网 IP。纯 IPv6 地址（如 2001:db8::1）无需手动加括号，插件会自动处理。"
+  },
+  "oauth_callback_bind": {
+    "description": "用户 OAuth 回调服务器监听地址（仅用户模式 Web 流需要）",
+    "type": "string",
+    "default": "0.0.0.0",
+    "hint": "HTTP 回调服务器实际绑定的本地 IP 地址。0.0.0.0 表示监听所有 IPv4 接口；:: 表示监听所有 IPv6 接口（在 Linux/macOS 上通常同时接受 IPv4 连接）；也可填写具体 IP，如 192.168.1.10 或 fe80::1。"
   }
 }

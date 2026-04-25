@@ -71,6 +71,8 @@ git clone https://github.com/html5syt/astrbot-openclaw-lark astrbot_plugin_feish
 | `domain` | ❌ | `feishu` | 飞书域名：`feishu`（国内）或 `lark`（海外） |
 | `auth_mode` | ❌ | `tenant` | 认证模式：`tenant`（机器人）或 `user`（用户 OAuth） |
 | `oauth_callback_port` | ❌ | `0` | 用户 OAuth Web 回调端口（仅 `auth_mode=user` 时生效，设为 0 则使用设备流授权） |
+| `oauth_callback_host` | ❌ | `localhost` | 飞书重定向回调的**对外**主机名或 IP（如公网 IP、域名），用于拼接回调 URL |
+| `oauth_callback_bind` | ❌ | `0.0.0.0` | 回调 HTTP 服务器**监听**的本地地址；`0.0.0.0` 全 IPv4，`::` 全 IPv6（含 IPv4-mapped） |
 
 ### 创建飞书应用
 
@@ -406,21 +408,29 @@ AI 工具以用户身份调用飞书 API，适合需要访问个人数据的场�
 
 #### 配置 Web 回调流（Authorization Code Flow）
 
-1. **确定回调地址**：插件会在宿主机所有网络接口（`0.0.0.0`）上的指定端口启动 HTTP 服务器。回调地址格式为：
+1. **确定回调地址**：插件会在宿主机的 `oauth_callback_bind` 地址和 `oauth_callback_port` 端口上启动 HTTP 服务器。飞书重定向到的回调地址由 `oauth_callback_host` 决定，格式为：
 
    ```
-   http://<宿主机公网IP或域名>:<端口>/feishu/oauth/callback
+   http://<oauth_callback_host>:<oauth_callback_port>/feishu/oauth/callback
    ```
 
-   > 例如：`http://1.2.3.4:19999/feishu/oauth/callback`
+   > 示例（公网 IPv4）：`http://1.2.3.4:19999/feishu/oauth/callback`
+   >
+   > 示例（IPv6）：`http://[2001:db8::1]:19999/feishu/oauth/callback`（`oauth_callback_host` 填 `2001:db8::1`，插件自动补括号）
 
 2. **在飞书开放平台添加回调地址**：
    - 进入[飞书开放平台](https://open.feishu.cn/app) → 你的应用 → **安全设置**
    - 在「重定向 URL」中添加上述回调地址
 
-3. **在插件中设置端口**：
-   - 将 `oauth_callback_port` 设置为对应端口（如 `19999`）
-   - 确保防火墙/端口映射允许该端口被外网访问
+3. **在插件中配置以下三项**：
+
+   | 配置项 | 说明 | 示例 |
+   |--------|------|------|
+   | `oauth_callback_port` | 监听端口 | `19999` |
+   | `oauth_callback_host` | 飞书重定向回来的对外主机名/IP | `1.2.3.4` 或 `my.domain.com` 或 `2001:db8::1` |
+   | `oauth_callback_bind` | 服务器实际绑定的本地地址 | `0.0.0.0`（全 IPv4）、`::`（全 IPv6，通常同时接受 IPv4）、具体 IP |
+
+   确保防火墙/端口映射允许该端口被外网访问。
 
 4. **完成授权**：在 AstrBot 对话中发送 `/feishu login`，点击弹出的链接即可一键授权。
 
