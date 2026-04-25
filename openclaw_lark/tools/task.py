@@ -38,6 +38,7 @@ async def _task_task(event: Any, **kw: Any) -> str:
     client = get_lark_client()
     action = kw.get("action")
     uid_type = kw.get("user_id_type", "open_id")
+    user_id = kw.get("_user_id")
 
     try:
         if action == "create":
@@ -56,14 +57,25 @@ async def _task_task(event: Any, **kw: Any) -> str:
                         return ok({"error": f"{field}.timestamp format error. Use ISO 8601, e.g. '2026-01-01T00:00:00+08:00'"})
                     task_data[field] = {"timestamp": ts, "is_all_day": val.get("is_all_day", False)}
 
-            if kw.get("members"):
-                task_data["members"] = kw["members"]
+            members = list(kw["members"]) if kw.get("members") else []
+            current_user_id = kw.get("current_user_id")
+            if current_user_id:
+                member_ids = {m.get("id") for m in members}
+                if current_user_id not in member_ids:
+                    members.append({"id": current_user_id, "type": "user", "role": "follower"})
+            if members:
+                task_data["members"] = members
+
+            if kw.get("repeat_rule"):
+                task_data["repeat_rule"] = kw["repeat_rule"]
             if kw.get("tasklists"):
                 task_data["tasklists"] = kw["tasklists"]
 
             res = await client.post(
                 "/open-apis/task/v2/tasks",
                 {"task": task_data},
+                params={"user_id_type": uid_type},
+                user_id=user_id,
             )
             client.check(res, "task_task.create")
             return ok(res.get("data", {}))
@@ -75,6 +87,7 @@ async def _task_task(event: Any, **kw: Any) -> str:
             res = await client.get(
                 f"/open-apis/task/v2/tasks/{task_guid}",
                 params={"user_id_type": uid_type},
+                user_id=user_id,
             )
             client.check(res, "task_task.get")
             return ok(res.get("data", {}))
@@ -87,7 +100,7 @@ async def _task_task(event: Any, **kw: Any) -> str:
                 params["page_token"] = kw["page_token"]
             if kw.get("completed") is not None:
                 params["completed"] = kw["completed"]
-            res = await client.get("/open-apis/task/v2/tasks", params=params)
+            res = await client.get("/open-apis/task/v2/tasks", params=params, user_id=user_id)
             client.check(res, "task_task.list")
             return ok(res.get("data", {}))
 
@@ -124,6 +137,8 @@ async def _task_task(event: Any, **kw: Any) -> str:
 
             if kw.get("members"):
                 update_data["members"] = kw["members"]
+            if kw.get("repeat_rule"):
+                update_data["repeat_rule"] = kw["repeat_rule"]
 
             update_fields = list(update_data.keys())
             data = {"task": update_data, "update_fields": update_fields}
@@ -131,8 +146,35 @@ async def _task_task(event: Any, **kw: Any) -> str:
             res = await client.patch(
                 f"/open-apis/task/v2/tasks/{task_guid}",
                 data,
+                params={"user_id_type": uid_type},
+                user_id=user_id,
             )
             client.check(res, "task_task.patch")
+            return ok(res.get("data", {}))
+
+        elif action == "add_members":
+            task_guid = kw.get("task_guid", "")
+            if not task_guid:
+                return ok({"error": "task_guid is required for 'add_members' action"})
+            members = kw.get("members")
+            if not members:
+                return ok({"error": "members is required and cannot be empty for 'add_members' action"})
+
+            member_data = [
+                {"id": m["id"], "type": m.get("type", "user"), "role": m.get("role", "assignee")}
+                for m in members
+            ]
+            body: dict = {"members": member_data}
+            if kw.get("client_token"):
+                body["client_token"] = kw["client_token"]
+
+            res = await client.post(
+                f"/open-apis/task/v2/tasks/{task_guid}/add_members",
+                body,
+                params={"user_id_type": uid_type},
+                user_id=user_id,
+            )
+            client.check(res, "task_task.add_members")
             return ok(res.get("data", {}))
 
         else:
@@ -145,26 +187,40 @@ async def _task_task(event: Any, **kw: Any) -> str:
 TaskTaskTool: FunctionTool = make_tool(
     name="feishu_task_task",
     description=(
-        "飞书任务管理工具（以机器人身份）。"
+        "【以用户或应用身份】飞书任务管理工具。"
+        "用于创建、查询、更新任务，以及添加任务成员。"
         "Actions: create（创建任务）, get（获取任务详情）, "
-        "list（查询我的任务列表）, patch（更新任务）。"
-        "时间格式：ISO 8601/RFC 3339，例如 '2026-01-01T00:00:00+08:00'。"
+        "list（查询任务列表，仅返回我负责的任务）, patch（更新任务）, add_members（添加任务成员）。"
+        "时间格式：ISO 8601/RFC 3339（含时区），例如 '2026-01-01T00:00:00+08:00'。"
+        "支持通过 auth_type 参数切换用户（user）或应用（tenant）身份。"
     ),
     parameters={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["create", "get", "list", "patch"],
+                "enum": ["create", "get", "list", "patch", "add_members"],
                 "description": "操作类型",
+            },
+            "auth_type": {
+                "type": "string",
+                "enum": ["tenant", "user"],
+                "description": "授权类型，默认 user（用户身份）；tenant 为应用身份。",
             },
             "task_guid": {
                 "type": "string",
-                "description": "任务 GUID（action=get/patch 时必填）",
+                "description": "任务 GUID（action=get/patch/add_members 时必填）",
             },
             "summary": {
                 "type": "string",
                 "description": "任务标题（action=create 时必填；action=patch 时可选）",
+            },
+            "current_user_id": {
+                "type": "string",
+                "description": (
+                    "当前用户的 open_id（action=create 时建议填写，从消息上下文的 SenderId 获取）。"
+                    "若 members 中不包含此用户，工具会自动添加为 follower，确保创建者可编辑任务。"
+                ),
             },
             "description": {
                 "type": "string",
@@ -176,7 +232,7 @@ TaskTaskTool: FunctionTool = make_tool(
                 "properties": {
                     "timestamp": {
                         "type": "string",
-                        "description": "截止时间，ISO 8601/RFC 3339 格式，例如 '2026-01-01T00:00:00+08:00'",
+                        "description": "截止时间，ISO 8601/RFC 3339 格式（含时区），例如 '2026-01-01T00:00:00+08:00'",
                     },
                     "is_all_day": {"type": "boolean", "description": "是否全天任务"},
                 },
@@ -187,7 +243,7 @@ TaskTaskTool: FunctionTool = make_tool(
                 "properties": {
                     "timestamp": {
                         "type": "string",
-                        "description": "开始时间，ISO 8601/RFC 3339 格式",
+                        "description": "开始时间，ISO 8601/RFC 3339 格式（含时区）",
                     },
                     "is_all_day": {"type": "boolean", "description": "是否全天"},
                 },
@@ -201,14 +257,19 @@ TaskTaskTool: FunctionTool = make_tool(
             },
             "members": {
                 "type": "array",
-                "description": "任务成员列表（assignee=负责人，follower=关注人）",
+                "description": "任务成员列表（assignee=负责人，follower=关注人）。成员类型（type）支持 user 和 app，默认 user。",
                 "items": {
                     "type": "object",
                     "properties": {
                         "id": {"type": "string", "description": "成员 open_id"},
+                        "type": {"type": "string", "enum": ["user", "app"], "description": "成员类型，默认 user"},
                         "role": {"type": "string", "enum": ["assignee", "follower"]},
                     },
                 },
+            },
+            "repeat_rule": {
+                "type": "string",
+                "description": "重复规则（RRULE 格式，action=create/patch 时可选）",
             },
             "tasklists": {
                 "type": "array",
@@ -220,6 +281,10 @@ TaskTaskTool: FunctionTool = make_tool(
                         "section_guid": {"type": "string"},
                     },
                 },
+            },
+            "client_token": {
+                "type": "string",
+                "description": "幂等 token，提供后实现幂等行为（action=add_members 时可选）",
             },
             "completed": {
                 "type": "boolean",
@@ -248,14 +313,24 @@ async def _task_tasklist(event: Any, **kw: Any) -> str:
     client = get_lark_client()
     action = kw.get("action")
     tasklist_guid = kw.get("tasklist_guid", "")
+    uid_type = kw.get("user_id_type", "open_id")
+    user_id = kw.get("_user_id")
 
     try:
         if action == "create":
             if not kw.get("name"):
                 return ok({"error": "name is required for 'create' action"})
+            body: dict = {"name": kw["name"]}
+            if kw.get("members"):
+                body["members"] = [
+                    {"id": m["id"], "type": m.get("type", "user"), "role": m.get("role", "editor")}
+                    for m in kw["members"]
+                ]
             res = await client.post(
                 "/open-apis/task/v2/tasklists",
-                {"tasklist": {"name": kw["name"]}},
+                {"tasklist": body},
+                params={"user_id_type": uid_type},
+                user_id=user_id,
             )
             client.check(res, "task_tasklist.create")
             return ok(res.get("data", {}))
@@ -263,17 +338,21 @@ async def _task_tasklist(event: Any, **kw: Any) -> str:
         elif action == "get":
             if not tasklist_guid:
                 return ok({"error": "tasklist_guid is required for 'get' action"})
-            res = await client.get(f"/open-apis/task/v2/tasklists/{tasklist_guid}")
+            res = await client.get(
+                f"/open-apis/task/v2/tasklists/{tasklist_guid}",
+                params={"user_id_type": uid_type},
+                user_id=user_id,
+            )
             client.check(res, "task_tasklist.get")
             return ok(res.get("data", {}))
 
         elif action == "list":
-            params: dict = {}
+            params: dict = {"user_id_type": uid_type}
             if kw.get("page_size"):
                 params["page_size"] = kw["page_size"]
             if kw.get("page_token"):
                 params["page_token"] = kw["page_token"]
-            res = await client.get("/open-apis/task/v2/tasklists", params=params)
+            res = await client.get("/open-apis/task/v2/tasklists", params=params, user_id=user_id)
             client.check(res, "task_tasklist.list")
             return ok(res.get("data", {}))
 
@@ -283,29 +362,47 @@ async def _task_tasklist(event: Any, **kw: Any) -> str:
             update: dict = {}
             if kw.get("name"):
                 update["name"] = kw["name"]
+            if not update:
+                return ok({"error": "No fields to update"})
             res = await client.patch(
                 f"/open-apis/task/v2/tasklists/{tasklist_guid}",
                 {"tasklist": update, "update_fields": list(update.keys())},
+                params={"user_id_type": uid_type},
+                user_id=user_id,
             )
             client.check(res, "task_tasklist.patch")
             return ok(res.get("data", {}))
 
-        elif action == "delete":
+        elif action == "add_members":
             if not tasklist_guid:
-                return ok({"error": "tasklist_guid is required for 'delete' action"})
-            res = await client.delete(f"/open-apis/task/v2/tasklists/{tasklist_guid}")
-            client.check(res, "task_tasklist.delete")
-            return ok({"success": True})
+                return ok({"error": "tasklist_guid is required for 'add_members' action"})
+            members = kw.get("members")
+            if not members:
+                return ok({"error": "members is required and cannot be empty for 'add_members' action"})
+            member_data = [
+                {"id": m["id"], "type": m.get("type", "user"), "role": m.get("role", "editor")}
+                for m in members
+            ]
+            res = await client.post(
+                f"/open-apis/task/v2/tasklists/{tasklist_guid}/add_members",
+                {"members": member_data},
+                params={"user_id_type": uid_type},
+                user_id=user_id,
+            )
+            client.check(res, "task_tasklist.add_members")
+            return ok(res.get("data", {}))
 
         elif action == "tasks":
             if not tasklist_guid:
                 return ok({"error": "tasklist_guid is required for 'tasks' action"})
-            params = {}
+            params = {"user_id_type": uid_type}
             for k in ("page_size", "page_token", "completed"):
                 if kw.get(k) is not None:
                     params[k] = kw[k]
             res = await client.get(
-                f"/open-apis/task/v2/tasklists/{tasklist_guid}/tasks", params=params
+                f"/open-apis/task/v2/tasklists/{tasklist_guid}/tasks",
+                params=params,
+                user_id=user_id,
             )
             client.check(res, "task_tasklist.tasks")
             return ok(res.get("data", {}))
@@ -320,28 +417,52 @@ async def _task_tasklist(event: Any, **kw: Any) -> str:
 TaskTasklistTool: FunctionTool = make_tool(
     name="feishu_task_tasklist",
     description=(
-        "飞书任务清单管理工具（以机器人身份）。"
-        "Actions: create（创建清单）, get（获取清单详情）, list（列出清单）, "
-        "patch（更新清单）, delete（删除清单）, tasks（查询清单内任务）。"
+        "【以用户或应用身份】飞书任务清单管理工具。"
+        "当用户要求创建/查询/管理清单、查看清单内的任务时使用。"
+        "Actions: create（创建清单）, get（获取清单详情）, list（列出所有可读取的清单）, "
+        "tasks（列出清单内的任务）, patch（更新清单）, add_members（添加成员）。"
+        "支持通过 auth_type 参数切换用户（user）或应用（tenant）身份，默认 user。"
     ),
     parameters={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["create", "get", "list", "patch", "delete", "tasks"],
+                "enum": ["create", "get", "list", "patch", "add_members", "tasks"],
                 "description": "操作类型",
+            },
+            "auth_type": {
+                "type": "string",
+                "enum": ["tenant", "user"],
+                "description": "授权类型，默认 user（用户身份）；tenant 为应用身份。",
             },
             "tasklist_guid": {
                 "type": "string",
-                "description": "清单 GUID（action=get/patch/delete/tasks 时必填）",
+                "description": "清单 GUID（action=get/patch/add_members/tasks 时必填）",
             },
             "name": {"type": "string", "description": "清单名称（action=create 时必填；patch 时可选）"},
-            "page_size": {"type": "number", "description": "每页数量"},
+            "members": {
+                "type": "array",
+                "description": (
+                    "成员列表（action=create/add_members 时使用）。"
+                    "editor=可编辑，viewer=可查看；类型支持 user 和 app，默认 user。"
+                    "注意：创建人自动成为 owner，如在 members 中也指定创建人，该用户最终成为 owner（同一用户只能有一个角色）。"
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "成员 ID（通常为 open_id）"},
+                        "type": {"type": "string", "enum": ["user", "app"], "description": "成员类型，默认 user"},
+                        "role": {"type": "string", "enum": ["editor", "viewer"], "description": "成员角色"},
+                    },
+                    "required": ["id"],
+                },
+            },
+            "page_size": {"type": "number", "description": "每页数量（默认 50，最大 100）"},
             "page_token": {"type": "string", "description": "分页标记"},
             "completed": {
                 "type": "boolean",
-                "description": "是否筛选已完成任务（action=tasks 时可选）",
+                "description": "是否只返回已完成的任务（action=tasks 时可选，默认返回所有）",
             },
             "user_id_type": {
                 "type": "string",
@@ -365,31 +486,58 @@ async def _task_comment(event: Any, **kw: Any) -> str:
     action = kw.get("action")
     task_guid = kw.get("task_guid", "")
     comment_id = kw.get("comment_id", "")
+    uid_type = kw.get("user_id_type", "open_id")
+    user_id = kw.get("_user_id")
 
     try:
-        base = f"/open-apis/task/v2/tasks/{task_guid}/comments"
-
         if action == "create":
+            if not task_guid:
+                return ok({"error": "task_guid is required for 'create' action"})
             if not kw.get("content"):
                 return ok({"error": "content is required for 'create' action"})
-            res = await client.post(base, {"content": kw["content"]})
+            body: dict = {
+                "content": kw["content"],
+                "resource_type": "task",
+                "resource_id": task_guid,
+            }
+            if kw.get("reply_to_comment_id"):
+                body["reply_to_comment_id"] = kw["reply_to_comment_id"]
+            res = await client.post(
+                f"/open-apis/task/v2/tasks/{task_guid}/comments",
+                body,
+                params={"user_id_type": uid_type},
+                user_id=user_id,
+            )
             client.check(res, "task_comment.create")
             return ok(res.get("data", {}))
 
         elif action == "get":
             if not comment_id:
                 return ok({"error": "comment_id is required for 'get' action"})
-            res = await client.get(f"{base}/{comment_id}")
+            res = await client.get(
+                f"/open-apis/task/v2/comments/{comment_id}",
+                params={"user_id_type": uid_type},
+                user_id=user_id,
+            )
             client.check(res, "task_comment.get")
             return ok(res.get("data", {}))
 
         elif action == "list":
-            params: dict = {}
+            resource_id = kw.get("resource_id") or task_guid
+            if not resource_id:
+                return ok({"error": "resource_id (or task_guid) is required for 'list' action"})
+            params: dict = {
+                "resource_type": "task",
+                "resource_id": resource_id,
+                "user_id_type": uid_type,
+            }
+            if kw.get("direction"):
+                params["direction"] = kw["direction"]
             if kw.get("page_size"):
                 params["page_size"] = kw["page_size"]
             if kw.get("page_token"):
                 params["page_token"] = kw["page_token"]
-            res = await client.get(base, params=params)
+            res = await client.get("/open-apis/task/v2/comments", params=params, user_id=user_id)
             client.check(res, "task_comment.list")
             return ok(res.get("data", {}))
 
@@ -398,14 +546,21 @@ async def _task_comment(event: Any, **kw: Any) -> str:
                 return ok({"error": "comment_id is required for 'update' action"})
             if not kw.get("content"):
                 return ok({"error": "content is required for 'update' action"})
-            res = await client.put(f"{base}/{comment_id}", {"content": kw["content"]})
+            res = await client.put(
+                f"/open-apis/task/v2/comments/{comment_id}",
+                {"content": kw["content"]},
+                user_id=user_id,
+            )
             client.check(res, "task_comment.update")
             return ok(res.get("data", {}))
 
         elif action == "delete":
             if not comment_id:
                 return ok({"error": "comment_id is required for 'delete' action"})
-            res = await client.delete(f"{base}/{comment_id}")
+            res = await client.delete(
+                f"/open-apis/task/v2/comments/{comment_id}",
+                user_id=user_id,
+            )
             client.check(res, "task_comment.delete")
             return ok({"success": True})
 
@@ -419,9 +574,11 @@ async def _task_comment(event: Any, **kw: Any) -> str:
 TaskCommentTool: FunctionTool = make_tool(
     name="feishu_task_comment",
     description=(
-        "飞书任务评论管理工具（以机器人身份）。"
-        "Actions: create（添加评论）, get（获取评论）, list（列出评论）, "
+        "【以用户或应用身份】飞书任务评论管理工具。"
+        "当用户要求添加/查询任务评论、回复评论时使用。"
+        "Actions: create（添加评论）, list（列出任务的所有评论）, get（获取单个评论详情）, "
         "update（更新评论）, delete（删除评论）。"
+        "支持通过 auth_type 参数切换用户（user）或应用（tenant）身份。"
     ),
     parameters={
         "type": "object",
@@ -431,9 +588,18 @@ TaskCommentTool: FunctionTool = make_tool(
                 "enum": ["create", "get", "list", "update", "delete"],
                 "description": "操作类型",
             },
+            "auth_type": {
+                "type": "string",
+                "enum": ["tenant", "user"],
+                "description": "授权类型，默认 user（用户身份）；tenant 为应用身份。",
+            },
             "task_guid": {
                 "type": "string",
-                "description": "任务 GUID（必填）",
+                "description": "任务 GUID（action=create 时必填；list 时作为 resource_id 的备用）",
+            },
+            "resource_id": {
+                "type": "string",
+                "description": "要获取评论的资源 ID（任务 GUID，action=list 时必填，优先于 task_guid）",
             },
             "comment_id": {
                 "type": "string",
@@ -441,12 +607,26 @@ TaskCommentTool: FunctionTool = make_tool(
             },
             "content": {
                 "type": "string",
-                "description": "评论内容（action=create/update 时必填）",
+                "description": "评论内容，纯文本，最长 3000 字符（action=create/update 时必填）",
             },
-            "page_size": {"type": "number", "description": "每页数量"},
+            "reply_to_comment_id": {
+                "type": "string",
+                "description": "要回复的评论 ID（action=create 时可选，用于回复某条评论）",
+            },
+            "direction": {
+                "type": "string",
+                "enum": ["asc", "desc"],
+                "description": "排序方式（asc=从旧到新，desc=从新到旧，默认 asc，action=list 时可选）",
+            },
+            "page_size": {"type": "number", "description": "每页数量（默认 50，最大 100）"},
             "page_token": {"type": "string", "description": "分页标记"},
+            "user_id_type": {
+                "type": "string",
+                "enum": ["open_id", "union_id", "user_id"],
+                "description": "用户 ID 类型（默认 open_id）",
+            },
         },
-        "required": ["action", "task_guid"],
+        "required": ["action"],
     },
     handler=_task_comment,
 )
@@ -461,24 +641,54 @@ async def _task_subtask(event: Any, **kw: Any) -> str:
     client = get_lark_client()
     action = kw.get("action")
     task_guid = kw.get("task_guid", "")
+    uid_type = kw.get("user_id_type", "open_id")
+    user_id = kw.get("_user_id")
 
     try:
         base = f"/open-apis/task/v2/tasks/{task_guid}/subtasks"
 
         if action == "create":
+            if not task_guid:
+                return ok({"error": "task_guid is required for 'create' action"})
             if not kw.get("summary"):
                 return ok({"error": "summary is required for 'create' action"})
-            res = await client.post(base, {"task": {"summary": kw["summary"]}})
+
+            task_data: dict = {"summary": kw["summary"]}
+            if kw.get("description"):
+                task_data["description"] = kw["description"]
+
+            for field in ("due", "start"):
+                val = kw.get(field)
+                if val and val.get("timestamp"):
+                    ts = _parse_time_to_ms(val["timestamp"])
+                    if not ts:
+                        return ok({"error": f"{field}.timestamp format error. Use ISO 8601, e.g. '2026-01-01T00:00:00+08:00'"})
+                    task_data[field] = {"timestamp": ts, "is_all_day": val.get("is_all_day", False)}
+
+            if kw.get("members"):
+                task_data["members"] = [
+                    {"id": m["id"], "type": m.get("type", "user"), "role": m.get("role", "assignee")}
+                    for m in kw["members"]
+                ]
+
+            res = await client.post(
+                base,
+                {"task": task_data},
+                params={"user_id_type": uid_type},
+                user_id=user_id,
+            )
             client.check(res, "task_subtask.create")
             return ok(res.get("data", {}))
 
         elif action == "list":
-            params: dict = {}
+            if not task_guid:
+                return ok({"error": "task_guid is required for 'list' action"})
+            params: dict = {"user_id_type": uid_type}
             if kw.get("page_size"):
                 params["page_size"] = kw["page_size"]
             if kw.get("page_token"):
                 params["page_token"] = kw["page_token"]
-            res = await client.get(base, params=params)
+            res = await client.get(base, params=params, user_id=user_id)
             client.check(res, "task_subtask.list")
             return ok(res.get("data", {}))
 
@@ -492,8 +702,10 @@ async def _task_subtask(event: Any, **kw: Any) -> str:
 TaskSubtaskTool: FunctionTool = make_tool(
     name="feishu_task_subtask",
     description=(
-        "飞书子任务管理工具（以机器人身份）。"
-        "Actions: create（创建子任务）, list（查询子任务列表）。"
+        "【以用户或应用身份】飞书任务的子任务管理工具。"
+        "当用户要求创建子任务、查询任务的子任务列表时使用。"
+        "Actions: create（创建子任务）, list（列出任务的所有子任务）。"
+        "支持通过 auth_type 参数切换用户（user）或应用（tenant）身份。"
     ),
     parameters={
         "type": "object",
@@ -503,6 +715,11 @@ TaskSubtaskTool: FunctionTool = make_tool(
                 "enum": ["create", "list"],
                 "description": "操作类型",
             },
+            "auth_type": {
+                "type": "string",
+                "enum": ["tenant", "user"],
+                "description": "授权类型，默认 user（用户身份）；tenant 为应用身份。",
+            },
             "task_guid": {
                 "type": "string",
                 "description": "父任务 GUID（必填）",
@@ -511,8 +728,52 @@ TaskSubtaskTool: FunctionTool = make_tool(
                 "type": "string",
                 "description": "子任务标题（action=create 时必填）",
             },
-            "page_size": {"type": "number", "description": "每页数量"},
+            "description": {
+                "type": "string",
+                "description": "子任务描述（action=create 时可选）",
+            },
+            "due": {
+                "type": "object",
+                "description": "截止时间（action=create 时可选）",
+                "properties": {
+                    "timestamp": {
+                        "type": "string",
+                        "description": "截止时间，ISO 8601/RFC 3339 格式（含时区），例如 '2026-01-01T00:00:00+08:00'",
+                    },
+                    "is_all_day": {"type": "boolean", "description": "是否全天任务"},
+                },
+            },
+            "start": {
+                "type": "object",
+                "description": "开始时间（action=create 时可选）",
+                "properties": {
+                    "timestamp": {
+                        "type": "string",
+                        "description": "开始时间，ISO 8601/RFC 3339 格式（含时区）",
+                    },
+                    "is_all_day": {"type": "boolean", "description": "是否全天"},
+                },
+            },
+            "members": {
+                "type": "array",
+                "description": "子任务成员列表（assignee=负责人，follower=关注人）。成员类型支持 user 和 app，默认 user。",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "成员 ID（通常为 open_id）"},
+                        "type": {"type": "string", "enum": ["user", "app"], "description": "成员类型，默认 user"},
+                        "role": {"type": "string", "enum": ["assignee", "follower"]},
+                    },
+                    "required": ["id"],
+                },
+            },
+            "page_size": {"type": "number", "description": "每页数量（默认 50，最大 100）"},
             "page_token": {"type": "string", "description": "分页标记"},
+            "user_id_type": {
+                "type": "string",
+                "enum": ["open_id", "union_id", "user_id"],
+                "description": "用户 ID 类型（默认 open_id）",
+            },
         },
         "required": ["action", "task_guid"],
     },
@@ -529,6 +790,7 @@ async def _task_section(event: Any, **kw: Any) -> str:
     client = get_lark_client()
     action = kw.get("action")
     uid_type = kw.get("user_id_type", "open_id")
+    user_id = kw.get("_user_id")
 
     try:
         if action == "create":
@@ -552,6 +814,7 @@ async def _task_section(event: Any, **kw: Any) -> str:
                 "/open-apis/task/v2/sections",
                 section_data,
                 params={"user_id_type": uid_type},
+                user_id=user_id,
             )
             client.check(res, "task_section.create")
             return ok(res.get("data", {}))
@@ -563,6 +826,7 @@ async def _task_section(event: Any, **kw: Any) -> str:
             res = await client.get(
                 f"/open-apis/task/v2/sections/{section_guid}",
                 params={"user_id_type": uid_type},
+                user_id=user_id,
             )
             client.check(res, "task_section.get")
             return ok(res.get("data", {}))
@@ -586,6 +850,7 @@ async def _task_section(event: Any, **kw: Any) -> str:
                 f"/open-apis/task/v2/sections/{section_guid}",
                 {"section": update_data, "update_fields": update_fields},
                 params={"user_id_type": uid_type},
+                user_id=user_id,
             )
             client.check(res, "task_section.patch")
             return ok(res.get("data", {}))
@@ -603,7 +868,7 @@ async def _task_section(event: Any, **kw: Any) -> str:
                 params["page_size"] = kw["page_size"]
             if kw.get("page_token"):
                 params["page_token"] = kw["page_token"]
-            res = await client.get("/open-apis/task/v2/sections", params=params)
+            res = await client.get("/open-apis/task/v2/sections", params=params, user_id=user_id)
             client.check(res, "task_section.list")
             return ok(res.get("data", {}))
 
@@ -625,7 +890,9 @@ async def _task_section(event: Any, **kw: Any) -> str:
                 ts = _parse_time_to_ms(kw["created_to"])
                 params["created_to"] = ts if ts else kw["created_to"]
             res = await client.get(
-                f"/open-apis/task/v2/sections/{section_guid}/tasks", params=params
+                f"/open-apis/task/v2/sections/{section_guid}/tasks",
+                params=params,
+                user_id=user_id,
             )
             client.check(res, "task_section.tasks")
             return ok(res.get("data", {}))
@@ -640,10 +907,12 @@ async def _task_section(event: Any, **kw: Any) -> str:
 TaskSectionTool: FunctionTool = make_tool(
     name="feishu_task_section",
     description=(
-        "飞书任务自定义分组（Section）管理工具。"
+        "【以用户或应用身份】飞书任务自定义分组（Section）管理工具。"
+        "用于创建、查询、更新自定义分组，以及列出分组内的任务。"
         "Actions: create（创建分组）, get（获取分组详情）, patch（更新分组）, "
-        "list（列出分组）, tasks（查询分组内任务）。"
+        "list（获取分组列表）, tasks（获取分组任务列表）。"
         "resource_type 可选值：'tasklist'（任务清单）或 'my_tasks'（我的任务）。"
+        "支持通过 auth_type 参数切换用户（user）或应用（tenant）身份。"
     ),
     parameters={
         "type": "object",
@@ -652,6 +921,11 @@ TaskSectionTool: FunctionTool = make_tool(
                 "type": "string",
                 "enum": ["create", "get", "patch", "list", "tasks"],
                 "description": "操作类型",
+            },
+            "auth_type": {
+                "type": "string",
+                "enum": ["tenant", "user"],
+                "description": "授权类型，默认 user（用户身份）；tenant 为应用身份。",
             },
             "section_guid": {
                 "type": "string",

@@ -95,13 +95,19 @@ class FeishuToolsPlugin(Star):
     """飞书工具 AstrBot 插件。
 
     将飞书 Open API 核心功能封装为 LLM 工具，注册到 AstrBot 工具系统中。
-    支持以租户（机器人）或用户 OAuth 身份（Device Flow）操作飞书资源。
+    支持以租户（机器人）或用户 OAuth 身份操作飞书资源。
+
+    用户 OAuth 支持两种授权流程：
+      - 设备流（Device Flow）：auth_mode=user 且未配置 oauth_callback_port 时使用。
+        用户在任意设备上访问授权链接完成授权。
+      - Web 流（Authorization Code）：auth_mode=user 且配置了 oauth_callback_port 时使用。
+        插件在宿主机启动 HTTP 回调服务器（监听 0.0.0.0），飞书将授权结果重定向回本机。
 
     命令：
       /feishu           - 查看当前认证状态
       /feishu auth tenant - 切换为租户（机器人）模式（默认）
       /feishu auth user   - 切换为用户 OAuth 模式
-      /feishu login     - 发起 OAuth 授权（用户模式）
+      /feishu login     - 发起 OAuth 授权
       /feishu logout    - 撤销当前用户的 OAuth 授权
     """
 
@@ -113,6 +119,7 @@ class FeishuToolsPlugin(Star):
         app_secret: str = cfg.get("app_secret", "")
         domain: str = cfg.get("domain", "feishu")
         auth_mode: str = cfg.get("auth_mode", "tenant")
+        oauth_callback_port: int = int(cfg.get("oauth_callback_port", 0) or 0)
 
         if not app_id or not app_secret:
             logger.warning(
@@ -125,6 +132,7 @@ class FeishuToolsPlugin(Star):
             app_secret=app_secret,
             domain=domain,
             auth_mode=auth_mode,
+            oauth_callback_port=oauth_callback_port,
         )
 
         # Wire token persistence to AstrBot KV store
@@ -139,6 +147,25 @@ class FeishuToolsPlugin(Star):
             f"[feishu_tools] 插件已加载，共注册 {len(_ALL_TOOLS)} 个飞书工具。"
             f"域名：{domain}，认证模式：{auth_mode}。"
         )
+
+        # Start OAuth callback server if user mode and port configured
+        if auth_mode == "user" and oauth_callback_port:
+            asyncio.create_task(self._start_oauth_server())
+
+    async def _start_oauth_server(self) -> None:
+        client = get_lark_client()
+        ok = await client.start_oauth_callback_server()
+        if ok:
+            logger.info(
+                f"[feishu_tools] OAuth 回调服务器已启动，"
+                f"监听 0.0.0.0:{client.oauth_callback_port}"
+            )
+        else:
+            logger.warning(
+                f"[feishu_tools] OAuth 回调服务器启动失败，"
+                f"端口 {client.oauth_callback_port} 可能已被占用。"
+                "将回退到设备流（Device Flow）授权。"
+            )
 
     # ------------------------------------------------------------------
     # Token persistence helpers (wired to AstrBot KV store)
@@ -186,6 +213,9 @@ class FeishuToolsPlugin(Star):
 
         if mode == "user":
             client.auth_mode = "user"
+            # Start callback server if port is configured and not yet running
+            if client.oauth_callback_port and client._oauth_server is None:
+                asyncio.create_task(self._start_oauth_server())
             uat = await client.get_user_access_token(uid)
             if uat:
                 yield event.plain_result(
@@ -201,9 +231,12 @@ class FeishuToolsPlugin(Star):
 
         # No mode specified: show status
         has_uat = bool(await client.get_user_access_token(uid))
+        web_mode = bool(client.oauth_callback_port)
+        flow_desc = f"Web 回调流（端口 {client.oauth_callback_port}）" if web_mode else "设备流（Device Flow）"
         yield event.plain_result(
             f"飞书工具 - 当前认证模式：{client.auth_mode}\n"
-            f"{'✅ 用户已授权 OAuth' if has_uat else '（用户未授权）'}\n\n"
+            f"{'✅ 用户已授权 OAuth' if has_uat else '（用户未授权）'}\n"
+            f"OAuth 授权流：{flow_desc}\n\n"
             "切换模式：\n"
             "  /feishu auth tenant  - 租户（机器人）模式（默认）\n"
             "  /feishu auth user    - 用户 OAuth 模式"
@@ -211,7 +244,7 @@ class FeishuToolsPlugin(Star):
 
     @feishu.command("login")
     async def feishu_login(self, event: AstrMessageEvent) -> Any:
-        """发起飞书 OAuth 授权（Device Flow）。适用于用户 OAuth 模式。"""
+        """发起飞书 OAuth 授权。用户模式下自动选择 Web 流或设备流。"""
         client = get_lark_client()
         uid = event.get_sender_id()
 
@@ -229,6 +262,31 @@ class FeishuToolsPlugin(Star):
             )
             return
 
+        # Use web flow if callback port is configured
+        if client.oauth_callback_port:
+            # Ensure server is running
+            if client._oauth_server is None:
+                started = await client.start_oauth_callback_server()
+                if not started:
+                    logger.warning("[feishu_tools] OAuth 回调服务器启动失败，回退到设备流")
+                    # Fall through to device flow
+                    client_port_backup = client.oauth_callback_port
+                    client.oauth_callback_port = 0
+                    async for msg in self.feishu_login(event):
+                        yield msg
+                    client.oauth_callback_port = client_port_backup
+                    return
+
+            auth_url, _state = client.generate_web_auth_url(uid)
+            yield event.plain_result(
+                "🔑 请点击以下链接完成飞书 OAuth 授权：\n\n"
+                f"{auth_url}\n\n"
+                "在飞书页面确认授权后，回调页面会提示授权成功。\n"
+                "授权成功后 AI 工具将以您的身份操作飞书资源。"
+            )
+            return
+
+        # Device flow (RFC 8628)
         try:
             flow = await client.start_device_flow()
         except Exception as e:
@@ -244,13 +302,12 @@ class FeishuToolsPlugin(Star):
         device_code = flow.get("device_code", "")
 
         yield event.plain_result(
-            f"🔑 请在 {expires_in} 秒内点击以下链接完成飞书授权：\n\n"
+            f"🔑 请在 {expires_in} 秒内点击以下链接完成飞书授权（设备流）：\n\n"
             f"{verify_url}\n\n"
             "授权完成后机器人将自动获取令牌（无需额外操作）。\n"
             "授权成功后 AI 工具将以您的身份操作飞书资源。"
         )
 
-        # Poll for token in background task (non-blocking)
         async def _poll() -> None:
             data = await client.poll_device_token(
                 device_code=device_code,
@@ -266,7 +323,7 @@ class FeishuToolsPlugin(Star):
                     refresh_expires_in=int(data.get("refresh_expires_in", 2592000)),
                     scope=data.get("scope", ""),
                 )
-                logger.info(f"[feishu_tools] 用户 {uid} OAuth 授权成功。")
+                logger.info(f"[feishu_tools] 用户 {uid} OAuth 授权成功（设备流）。")
             else:
                 logger.warning(
                     f"[feishu_tools] 用户 {uid} OAuth 授权未完成（超时或用户拒绝）。"
@@ -291,4 +348,10 @@ class FeishuToolsPlugin(Star):
 
     async def terminate(self) -> None:
         """插件卸载时清理资源。"""
+        try:
+            client = get_lark_client()
+            await client.stop_oauth_callback_server()
+        except Exception:
+            pass
         logger.info("[feishu_tools] 插件已卸载。")
+

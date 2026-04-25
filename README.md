@@ -70,6 +70,7 @@ git clone https://github.com/html5syt/astrbot-openclaw-lark astrbot_plugin_feish
 | `app_secret` | ✅ | — | 飞书应用的 App Secret |
 | `domain` | ❌ | `feishu` | 飞书域名：`feishu`（国内）或 `lark`（海外） |
 | `auth_mode` | ❌ | `tenant` | 认证模式：`tenant`（机器人）或 `user`（用户 OAuth） |
+| `oauth_callback_port` | ❌ | `0` | 用户 OAuth Web 回调端口（仅 `auth_mode=user` 时生效，设为 0 则使用设备流授权） |
 
 ### 创建飞书应用
 
@@ -384,8 +385,6 @@ AI 工具以机器人身份调用飞书 API，适合大多数自动化场景。�
 
 ### 用户 OAuth 模式
 
-**警告**：请使用租户模式，用户模式缺失OAuth回调实现，无法正常授权。
-
 AI 工具以用户身份调用飞书 API，适合需要访问个人数据的场景（如个人日历、私有文档等）。
 
 使用用户 OAuth 模式需先授权：
@@ -396,14 +395,47 @@ AI 工具以用户身份调用飞书 API，适合需要访问个人数据的场�
 
 授权后，AI 工具将以你的用户身份操作飞书。如果 AI 工具遇到权限不足，会提示发送 `/feishu login` 重新授权。
 
+#### 授权流程选择
+
+插件支持两种 OAuth 授权流程，根据配置自动切换：
+
+| 流程 | 触发条件 | 适用场景 |
+|------|----------|----------|
+| **Web 回调流**（推荐） | `oauth_callback_port` 设为非零端口 | 宿主机可被外网/飞书访问，体验更佳 |
+| **设备流**（Device Flow） | `oauth_callback_port` 为 0（默认） | 宿主机无公网访问，用户在任意设备扫码/点链接完成授权 |
+
+#### 配置 Web 回调流（Authorization Code Flow）
+
+1. **确定回调地址**：插件会在宿主机所有网络接口（`0.0.0.0`）上的指定端口启动 HTTP 服务器。回调地址格式为：
+
+   ```
+   http://<宿主机公网IP或域名>:<端口>/feishu/oauth/callback
+   ```
+
+   > 例如：`http://1.2.3.4:19999/feishu/oauth/callback`
+
+2. **在飞书开放平台添加回调地址**：
+   - 进入[飞书开放平台](https://open.feishu.cn/app) → 你的应用 → **安全设置**
+   - 在「重定向 URL」中添加上述回调地址
+
+3. **在插件中设置端口**：
+   - 将 `oauth_callback_port` 设置为对应端口（如 `19999`）
+   - 确保防火墙/端口映射允许该端口被外网访问
+
+4. **完成授权**：在 AstrBot 对话中发送 `/feishu login`，点击弹出的链接即可一键授权。
+
+#### 使用设备流（Device Flow）
+
+将 `oauth_callback_port` 设为 `0`（默认），发送 `/feishu login` 后，机器人会发送一个授权链接，用户在任意设备上访问该链接并完成授权即可。无需公网端口，但需要应用开启设备流权限（`offline_access` scope）。
+
 ### 命令一览
 
 | 命令 | 说明 |
 |------|------|
-| `/feishu auth` | 查看当前认证模式和授权状态 |
+| `/feishu auth` | 查看当前认证模式、授权状态及 OAuth 流程类型 |
 | `/feishu auth tenant` | 切换为租户（机器人）模式 |
 | `/feishu auth user` | 切换为用户 OAuth 模式 |
-| `/feishu login` | 发起 OAuth 授权（Device Flow），会发送授权链接 |
+| `/feishu login` | 发起 OAuth 授权（自动选择 Web 回调流或设备流） |
 | `/feishu logout` | 撤销当前用户的 OAuth 授权 |
 
 ---
