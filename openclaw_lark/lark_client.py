@@ -205,6 +205,10 @@ class LarkAPIClient:
             await self._refresh_app_access_token()
         return self._app_access_token  # type: ignore[return-value]
 
+    async def get_tenant_token(self) -> str:
+        """Return a valid tenant (app) access token, refreshing if necessary."""
+        return await self._get_tenant_token()
+
     # ------------------------------------------------------------------
     # User token (OAuth)
     # ------------------------------------------------------------------
@@ -404,7 +408,8 @@ class LarkAPIClient:
         # should never appear here since oauth_callback_host must not contain
         # a port).
         if host.count(":") >= 2 and not host.startswith("["):
-            host = f"[{host}]"
+            # Percent-encode any zone ID separator ('%') per RFC 6874
+            host = f"[{host.replace('%', '%25')}]"
         return f"http://{host}:{self.oauth_callback_port}/feishu/oauth/callback"
 
     async def exchange_auth_code(self, code: str) -> Optional[dict]:

@@ -123,7 +123,11 @@ class FeishuToolsPlugin(Star):
         app_secret: str = cfg.get("app_secret", "")
         domain: str = cfg.get("domain", "feishu")
         auth_mode: str = cfg.get("auth_mode", "tenant")
-        oauth_callback_port: int = int(cfg.get("oauth_callback_port", 0) or 0)
+        oauth_callback_port_raw = cfg.get("oauth_callback_port", 0)
+        try:
+            oauth_callback_port: int = int(oauth_callback_port_raw) if oauth_callback_port_raw else 0
+        except (ValueError, TypeError):
+            oauth_callback_port = 0
         oauth_callback_host: str = cfg.get("oauth_callback_host", "localhost") or "localhost"
         oauth_callback_bind: str = cfg.get("oauth_callback_bind", "0.0.0.0") or "0.0.0.0"
 

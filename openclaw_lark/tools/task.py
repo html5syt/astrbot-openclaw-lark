@@ -1124,7 +1124,7 @@ async def _task_attachment(event: Any, **kw: Any) -> str:
             file_name = kw.get("name") or "attachment"
 
             # Always use tenant access token for attachment upload
-            token = await client._get_tenant_token()
+            token = await client.get_tenant_token()
             url = f"{client.base_url}/open-apis/task/v2/attachments/upload"
 
             async with httpx.AsyncClient(timeout=60.0) as hc:
