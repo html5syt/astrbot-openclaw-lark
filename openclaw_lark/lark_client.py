@@ -398,8 +398,12 @@ class LarkAPIClient:
 
     def _callback_redirect_uri(self) -> str:
         host = self.oauth_callback_host
-        # Wrap bare IPv6 addresses in brackets for a valid URI
-        if ":" in host and not host.startswith("["):
+        # Wrap bare IPv6 addresses in brackets for a valid URI.
+        # IPv6 addresses always contain two or more colons; a single colon
+        # indicates an IPv4:port string which should not be bracketed (and
+        # should never appear here since oauth_callback_host must not contain
+        # a port).
+        if host.count(":") >= 2 and not host.startswith("["):
             host = f"[{host}]"
         return f"http://{host}:{self.oauth_callback_port}/feishu/oauth/callback"
 

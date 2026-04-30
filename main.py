@@ -268,20 +268,16 @@ class FeishuToolsPlugin(Star):
             return
 
         # Use web flow if callback port is configured
-        if client.oauth_callback_port:
+        use_web_flow = bool(client.oauth_callback_port)
+        if use_web_flow:
             # Ensure server is running
             if client._oauth_server is None:
                 started = await client.start_oauth_callback_server()
                 if not started:
                     logger.warning("[feishu_tools] OAuth 回调服务器启动失败，回退到设备流")
-                    # Fall through to device flow
-                    client_port_backup = client.oauth_callback_port
-                    client.oauth_callback_port = 0
-                    async for msg in self.feishu_login(event):
-                        yield msg
-                    client.oauth_callback_port = client_port_backup
-                    return
+                    use_web_flow = False
 
+        if use_web_flow:
             auth_url, _state = client.generate_web_auth_url(uid)
             yield event.plain_result(
                 "🔑 请点击以下链接完成飞书 OAuth 授权：\n\n"
@@ -292,6 +288,13 @@ class FeishuToolsPlugin(Star):
             return
 
         # Device flow (RFC 8628)
+        async for msg in self._feishu_device_flow(event, client, uid):
+            yield msg
+
+    async def _feishu_device_flow(
+        self, event: AstrMessageEvent, client: LarkAPIClient, uid: str
+    ) -> Any:
+        """Execute RFC 8628 device authorization flow for the given user."""
         try:
             flow = await client.start_device_flow()
         except Exception as e:
