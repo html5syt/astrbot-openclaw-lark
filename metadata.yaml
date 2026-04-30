@@ -1,7 +1,7 @@
 name: astrbot_plugin_feishu_tools
 display_name: 飞书 AstrBot 能力增强 
-desc: 为 AstrBot 提供飞书/Lark 全套工具能力，包括文档、多维表格、电子表格、日历、任务、云盘、知识库等。支持租户模式认证。
-version: v1.1.4
+desc: 为 AstrBot 提供飞书/Lark 全套工具能力，包括文档、多维表格、电子表格、日历、任务、云盘、知识库等。支持租户及用户 OAuth 认证（设备流 / Web 回调流）。
+version: v1.2.0
 author: Mr. Tim
 repo: https://github.com/html5syt/astrbot-openclaw-lark
 support_platforms:
