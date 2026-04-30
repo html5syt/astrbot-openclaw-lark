@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+import base64
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import httpx
 from astrbot.api import FunctionTool
 
 from ..lark_client import get_lark_client
@@ -100,6 +102,8 @@ async def _task_task(event: Any, **kw: Any) -> str:
                 params["page_token"] = kw["page_token"]
             if kw.get("completed") is not None:
                 params["completed"] = kw["completed"]
+            if kw.get("agent_task_status") is not None:
+                params["agent_task_status"] = kw["agent_task_status"]
             res = await client.get("/open-apis/task/v2/tasks", params=params, user_id=user_id)
             client.check(res, "task_task.list")
             return ok(res.get("data", {}))
@@ -177,6 +181,30 @@ async def _task_task(event: Any, **kw: Any) -> str:
             client.check(res, "task_task.add_members")
             return ok(res.get("data", {}))
 
+        elif action == "append_steps":
+            task_guid = kw.get("task_guid", "")
+            if not task_guid:
+                return ok({"error": "task_guid is required for 'append_steps' action"})
+            idempotent_key = kw.get("idempotent_key", "")
+            if not idempotent_key:
+                return ok({"error": "idempotent_key is required for 'append_steps' action"})
+            task_steps = kw.get("task_steps")
+            if not task_steps:
+                return ok({"error": "task_steps is required and cannot be empty for 'append_steps' action"})
+
+            # append_steps always uses tenant (app) access token
+            res = await client.post(
+                "/open-apis/task/v2/agent_task_step_info/append_task_steps",
+                {
+                    "task_guid": task_guid,
+                    "idempotent_key": idempotent_key,
+                    "task_steps": task_steps,
+                },
+                user_id=None,  # force tenant token regardless of global auth_mode
+            )
+            client.check(res, "task_task.append_steps")
+            return ok(res.get("data", {}))
+
         else:
             return ok({"error": f"Unknown action: {action}"})
 
@@ -188,18 +216,19 @@ TaskTaskTool: FunctionTool = make_tool(
     name="feishu_task_task",
     description=(
         "【以用户或应用身份】飞书任务管理工具。"
-        "用于创建、查询、更新任务，以及添加任务成员。"
+        "用于创建、查询、更新任务，以及添加任务成员、追加任务步骤记录。"
         "Actions: create（创建任务）, get（获取任务详情）, "
-        "list（查询任务列表，仅返回我负责的任务）, patch（更新任务）, add_members（添加任务成员）。"
+        "list（查询任务列表，仅返回我负责的任务）, patch（更新任务）, "
+        "add_members（添加任务成员）, append_steps（追加任务步骤记录，固定使用应用身份）。"
         "时间格式：ISO 8601/RFC 3339（含时区），例如 '2026-01-01T00:00:00+08:00'。"
-        "支持通过 auth_type 参数切换用户（user）或应用（tenant）身份。"
+        "支持通过 auth_type 参数切换用户（user）或应用（tenant）身份，append_steps 固定使用应用身份。"
     ),
     parameters={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["create", "get", "list", "patch", "add_members"],
+                "enum": ["create", "get", "list", "patch", "add_members", "append_steps"],
                 "description": "操作类型",
             },
             "auth_type": {
@@ -209,7 +238,7 @@ TaskTaskTool: FunctionTool = make_tool(
             },
             "task_guid": {
                 "type": "string",
-                "description": "任务 GUID（action=get/patch/add_members 时必填）",
+                "description": "任务 GUID（action=get/patch/add_members/append_steps 时必填）",
             },
             "summary": {
                 "type": "string",
@@ -289,6 +318,27 @@ TaskTaskTool: FunctionTool = make_tool(
             "completed": {
                 "type": "boolean",
                 "description": "是否筛选已完成任务（action=list 时可选）",
+            },
+            "agent_task_status": {
+                "type": "integer",
+                "description": "Agent 任务状态过滤（action=list 时可选）",
+            },
+            "idempotent_key": {
+                "type": "string",
+                "description": "幂等键（action=append_steps 时必填）",
+            },
+            "task_steps": {
+                "type": "array",
+                "description": "要追加的任务步骤列表（action=append_steps 时必填，至少一项）",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "quote": {"type": "string", "description": "步骤引用信息"},
+                        "content": {"type": "string", "description": "步骤内容"},
+                        "timestamp": {"type": "integer", "description": "步骤时间戳"},
+                    },
+                    "required": ["quote", "content", "timestamp"],
+                },
             },
             "page_size": {"type": "number", "description": "每页数量（默认 50，最大 100）"},
             "page_token": {"type": "string", "description": "分页标记"},
@@ -979,4 +1029,158 @@ TaskSectionTool: FunctionTool = make_tool(
         "required": ["action"],
     },
     handler=_task_section,
+)
+
+
+# ---------------------------------------------------------------------------
+# feishu_task_agent
+# ---------------------------------------------------------------------------
+
+
+async def _task_task_agent(event: Any, **kw: Any) -> str:
+    client = get_lark_client()
+    action = kw.get("action")
+
+    try:
+        if action == "register":
+            # Always tenant (app) identity
+            res = await client.post(
+                "/open-apis/task/v2/agent/register_agent",
+                None,
+                user_id=None,
+            )
+            client.check(res, "task_agent.register")
+            return ok(res.get("data", {}))
+
+        elif action == "update_profile":
+            profile_content = kw.get("profile_content", "")
+            if not profile_content:
+                return ok({"error": "profile_content is required for 'update_profile' action"})
+            res = await client.post(
+                "/open-apis/task/v2/agent/update_agent_profile",
+                {"profile_content": profile_content},
+                user_id=None,
+            )
+            client.check(res, "task_agent.update_profile")
+            return ok(res.get("data", {}))
+
+        else:
+            return ok({"error": f"Unknown action: {action}"})
+
+    except Exception as e:
+        return ok({"error": str(e)})
+
+
+TaskTaskAgentTool: FunctionTool = make_tool(
+    name="feishu_task_agent",
+    description=(
+        "飞书任务 Agent 注册管理工具（固定使用应用身份）。"
+        "用于注册任务 Agent 或更新任务 Agent 的 Profile 内容。"
+        "Actions: register（注册任务 Agent）, update_profile（更新 Agent Profile）。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["register", "update_profile"],
+                "description": "操作类型",
+            },
+            "profile_content": {
+                "type": "string",
+                "description": "Agent Profile 内容（action=update_profile 时必填）",
+            },
+        },
+        "required": ["action"],
+    },
+    handler=_task_task_agent,
+)
+
+
+# ---------------------------------------------------------------------------
+# feishu_task_attachment
+# ---------------------------------------------------------------------------
+
+
+async def _task_attachment(event: Any, **kw: Any) -> str:
+    client = get_lark_client()
+    action = kw.get("action")
+
+    try:
+        if action == "upload":
+            resource_type = kw.get("resource_type", "task")
+            resource_id = kw.get("resource_id", "")
+            if not resource_id:
+                return ok({"error": "resource_id is required for 'upload' action"})
+            file_b64 = kw.get("file", "")
+            if not file_b64:
+                return ok({"error": "file is required for 'upload' action"})
+
+            try:
+                file_bytes = base64.b64decode(file_b64)
+            except Exception:
+                return ok({"error": "file must be a valid base64-encoded string"})
+
+            file_name = kw.get("name") or "attachment"
+
+            # Always use tenant access token for attachment upload
+            token = await client._get_tenant_token()
+            url = f"{client.base_url}/open-apis/task/v2/attachments/upload"
+
+            async with httpx.AsyncClient(timeout=60.0) as hc:
+                resp = await hc.post(
+                    url,
+                    files={"file": (file_name, file_bytes, "application/octet-stream")},
+                    data={"resource_type": resource_type, "resource_id": resource_id},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                resp.raise_for_status()
+                res = resp.json()
+
+            client.check(res, "task_attachment.upload")
+            return ok(res.get("data", {}))
+
+        else:
+            return ok({"error": f"Unknown action: {action}"})
+
+    except Exception as e:
+        return ok({"error": str(e)})
+
+
+TaskAttachmentTool: FunctionTool = make_tool(
+    name="feishu_task_attachment",
+    description=(
+        "飞书任务附件工具（固定使用应用身份）。"
+        "用于上传任务附件（base64 编码文件）。"
+        "Actions: upload（上传附件）。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["upload"],
+                "description": "操作类型",
+            },
+            "resource_type": {
+                "type": "string",
+                "enum": ["task", "task_delivery"],
+                "description": "资源类型，可选值：task、task_delivery。默认 task。",
+            },
+            "resource_id": {
+                "type": "string",
+                "description": "资源 ID（任务 GUID），action=upload 时必填。",
+            },
+            "file": {
+                "type": "string",
+                "description": "文件内容的 base64 编码字符串（action=upload 时必填）",
+            },
+            "name": {
+                "type": "string",
+                "description": "文件名（可选，默认 'attachment'）",
+            },
+        },
+        "required": ["action", "resource_id", "file"],
+    },
+    handler=_task_attachment,
 )

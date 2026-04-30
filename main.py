@@ -29,6 +29,8 @@ from .openclaw_lark.tools import (
     TaskCommentTool,
     TaskSubtaskTool,
     TaskSectionTool,
+    TaskTaskAgentTool,
+    TaskAttachmentTool,
     BitableAppTool,
     BitableTableTool,
     BitableRecordTool,
@@ -62,6 +64,8 @@ _ALL_TOOLS = (
     TaskCommentTool,
     TaskSubtaskTool,
     TaskSectionTool,
+    TaskTaskAgentTool,
+    TaskAttachmentTool,
     # 多维表格
     BitableAppTool,
     BitableTableTool,

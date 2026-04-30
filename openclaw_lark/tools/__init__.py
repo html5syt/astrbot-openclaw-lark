@@ -4,7 +4,7 @@
 # tools package
 
 from .calendar import CalendarCalendarTool, CalendarEventTool, CalendarEventAttendeeTool, CalendarFreebusyTool
-from .task import TaskTaskTool, TaskTasklistTool, TaskCommentTool, TaskSubtaskTool, TaskSectionTool
+from .task import TaskTaskTool, TaskTasklistTool, TaskCommentTool, TaskSubtaskTool, TaskSectionTool, TaskTaskAgentTool, TaskAttachmentTool
 from .bitable import BitableAppTool, BitableTableTool, BitableRecordTool, BitableFieldTool, BitableViewTool
 from .doc import FetchDocTool, CreateDocTool, UpdateDocTool
 from .drive import DriveFileTool, DocCommentsTool, DocMediaTool
@@ -24,6 +24,8 @@ __all__ = [
     "TaskCommentTool",
     "TaskSubtaskTool",
     "TaskSectionTool",
+    "TaskTaskAgentTool",
+    "TaskAttachmentTool",
     "BitableAppTool",
     "BitableTableTool",
     "BitableRecordTool",
